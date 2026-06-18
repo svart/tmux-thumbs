@@ -69,6 +69,8 @@ pub struct Swapper<'a> {
   thumbs_pane_id: Option<String>,
   content: Option<String>,
   signal: String,
+  capture_signal: String,
+  start_signal: String,
 }
 
 impl<'a> Swapper<'a> {
@@ -83,7 +85,10 @@ impl<'a> Swapper<'a> {
     let since_the_epoch = SystemTime::now()
       .duration_since(UNIX_EPOCH)
       .expect("Time went backwards");
-    let signal = format!("thumbs-finished-{}", since_the_epoch.as_secs());
+    let signal_id = format!("{}-{}", since_the_epoch.as_secs(), since_the_epoch.subsec_nanos());
+    let signal = format!("thumbs-finished-{}", signal_id);
+    let capture_signal = format!("thumbs-captured-{}", signal_id);
+    let start_signal = format!("thumbs-start-{}", signal_id);
 
     Swapper {
       executor,
@@ -99,6 +104,8 @@ impl<'a> Swapper<'a> {
       thumbs_pane_id: None,
       content: None,
       signal,
+      capture_signal,
+      start_signal,
     }
   }
 
@@ -214,16 +221,26 @@ impl<'a> Swapper<'a> {
       "".to_string()
     };
 
+    // Capture before swapping panes; once a split pane is moved into the hidden
+    // full-window slot, tmux can resize/reflow it and the old height can truncate matches.
+    let capture_command = format!(
+      "tmux capture-pane -J -t {active_pane_id} -p{scroll_params} | tail -n {height}",
+      active_pane_id = active_pane_id,
+      scroll_params = scroll_params,
+      height = self.active_pane_height.unwrap_or(i32::MAX)
+    );
+
     let pane_command = format!(
-        "tmux capture-pane -J -t {active_pane_id} -p{scroll_params} | tail -n {height} | {dir}/target/release/thumbs -f '%U:%H' -t {tmp} {args}; tmux swap-pane -t {active_pane_id}; {zoom_command} tmux wait-for -S {signal}",
+        "capture=\"$({capture_command})\"; tmux wait-for -S {capture_signal}; tmux wait-for {start_signal}; printf '%s\\n' \"$capture\" | {dir}/target/release/thumbs -f '%U:%H' -t {tmp} {args}; tmux swap-pane -t {active_pane_id}; {zoom_command} tmux wait-for -S {signal}",
+        capture_command = capture_command,
         active_pane_id = active_pane_id,
-        scroll_params = scroll_params,
-        height = self.active_pane_height.unwrap_or(i32::MAX),
         dir = self.dir,
         tmp = TMP_FILE,
         args = args.join(" "),
         zoom_command = zoom_command,
-        signal = self.signal
+        signal = self.signal,
+        capture_signal = self.capture_signal,
+        start_signal = self.start_signal
     );
 
     let thumbs_command = vec![
@@ -241,6 +258,7 @@ impl<'a> Swapper<'a> {
     let params: Vec<String> = thumbs_command.iter().map(|arg| arg.to_string()).collect();
 
     self.thumbs_pane_id = Some(self.executor.execute(params));
+    self.wait_capture();
   }
 
   pub fn swap_panes(&mut self) {
@@ -282,6 +300,20 @@ impl<'a> Swapper<'a> {
       .filter(|&s| !s.is_empty())
       .map(|arg| arg.to_string())
       .collect();
+
+    self.executor.execute(params);
+  }
+
+  pub fn wait_capture(&mut self) {
+    let wait_command = vec!["tmux", "wait-for", self.capture_signal.as_str()];
+    let params = wait_command.iter().map(|arg| arg.to_string()).collect();
+
+    self.executor.execute(params);
+  }
+
+  pub fn start_thumbs(&mut self) {
+    let start_command = vec!["tmux", "wait-for", "-S", self.start_signal.as_str()];
+    let params = start_command.iter().map(|arg| arg.to_string()).collect();
 
     self.executor.execute(params);
   }
@@ -418,6 +450,7 @@ mod tests {
   struct TestShell {
     outputs: Vec<String>,
     executed: Option<Vec<String>>,
+    executions: Vec<Vec<String>>,
   }
 
   impl TestShell {
@@ -425,6 +458,7 @@ mod tests {
       TestShell {
         executed: None,
         outputs,
+        executions: vec![],
       }
     }
   }
@@ -432,6 +466,7 @@ mod tests {
   impl Executor for TestShell {
     fn execute(&mut self, args: Vec<String>) -> String {
       self.executed = Some(args);
+      self.executions.push(self.executed.clone().unwrap());
       self.outputs.pop().unwrap()
     }
 
@@ -462,6 +497,7 @@ mod tests {
   fn swap_panes() {
     let last_command_outputs = vec![
       "".to_string(),
+      "".to_string(),
       "%100".to_string(),
       "".to_string(),
       "%106:100:24:1:0:nope\n%98:100:24:1:0:active\n%107:100:24:1:0:nope\n".to_string(),
@@ -483,6 +519,81 @@ mod tests {
     let expectation = vec!["tmux", "swap-pane", "-d", "-s", "%98", "-t", "%100"];
 
     assert_eq!(executor.last_executed().unwrap(), expectation);
+  }
+
+  #[test]
+  fn waits_for_capture_before_swapping_split_panes() {
+    let last_command_outputs = vec![
+      "".to_string(),
+      "".to_string(),
+      "".to_string(),
+      "%100".to_string(),
+      "".to_string(),
+      "%106:0:12:0:0:nope\n%98:0:8:0:0:active\n%107:0:12:0:0:nope\n".to_string(),
+    ];
+    let mut executor = TestShell::new(last_command_outputs);
+    let mut swapper = Swapper::new(
+      Box::new(&mut executor),
+      "".to_string(),
+      "".to_string(),
+      "".to_string(),
+      "".to_string(),
+      false,
+    );
+
+    swapper.capture_active_pane();
+    swapper.execute_thumbs();
+    swapper.swap_panes();
+    swapper.start_thumbs();
+
+    let wait_for_capture_index = executor
+      .executions
+      .iter()
+      .position(|command| {
+        command.len() == 3
+          && command[0] == "tmux"
+          && command[1] == "wait-for"
+          && command[2].starts_with("thumbs-captured-")
+      })
+      .expect("capture must complete before swapping panes");
+
+    let swap_index = executor
+      .executions
+      .iter()
+      .position(|command| command == &vec!["tmux", "swap-pane", "-d", "-s", "%98", "-t", "%100"])
+      .expect("test setup should swap panes");
+
+    assert!(wait_for_capture_index < swap_index);
+
+    let start_index = executor
+      .executions
+      .iter()
+      .position(|command| {
+        command.len() == 4
+          && command[0] == "tmux"
+          && command[1] == "wait-for"
+          && command[2] == "-S"
+          && command[3].starts_with("thumbs-start-")
+      })
+      .expect("thumbs should start after the pane is swapped into place");
+
+    assert!(swap_index < start_index);
+
+    let new_window_command = executor
+      .executions
+      .iter()
+      .find(|command| command.get(1) == Some(&"new-window".to_string()))
+      .expect("test setup should create a thumbs window");
+    let pane_command = new_window_command.last().unwrap();
+
+    let capture_index = pane_command.find("capture=\"$(tmux capture-pane -J -t %98 -p | tail -n 8)\"").unwrap();
+    let capture_signal_index = pane_command.find("tmux wait-for -S thumbs-captured-").unwrap();
+    let start_wait_index = pane_command.find("tmux wait-for thumbs-start-").unwrap();
+    let thumbs_index = pane_command.find("/target/release/thumbs").unwrap();
+
+    assert!(capture_index < capture_signal_index);
+    assert!(capture_signal_index < start_wait_index);
+    assert!(start_wait_index < thumbs_index);
   }
 
   #[test]
@@ -591,6 +702,7 @@ fn main() -> std::io::Result<()> {
   swapper.execute_thumbs();
   swapper.swap_panes();
   swapper.resize_pane();
+  swapper.start_thumbs();
   swapper.wait_thumbs();
   swapper.retrieve_content();
   swapper.destroy_content();
