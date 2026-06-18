@@ -33,41 +33,45 @@ enum CaptureEvent {
   Hint,
 }
 
+pub struct ViewOptions<'a> {
+  pub multi: bool,
+  pub reverse: bool,
+  pub unique: bool,
+  pub contrast: bool,
+  pub position: &'a str,
+}
+
+pub struct ViewColors {
+  pub select_foreground_color: Box<dyn color::Color>,
+  pub select_background_color: Box<dyn color::Color>,
+  pub multi_foreground_color: Box<dyn color::Color>,
+  pub multi_background_color: Box<dyn color::Color>,
+  pub foreground_color: Box<dyn color::Color>,
+  pub background_color: Box<dyn color::Color>,
+  pub hint_foreground_color: Box<dyn color::Color>,
+  pub hint_background_color: Box<dyn color::Color>,
+}
+
 impl<'a> View<'a> {
-  pub fn new(
-    state: &'a mut state::State<'a>,
-    multi: bool,
-    reverse: bool,
-    unique: bool,
-    contrast: bool,
-    position: &'a str,
-    select_foreground_color: Box<dyn color::Color>,
-    select_background_color: Box<dyn color::Color>,
-    multi_foreground_color: Box<dyn color::Color>,
-    multi_background_color: Box<dyn color::Color>,
-    foreground_color: Box<dyn color::Color>,
-    background_color: Box<dyn color::Color>,
-    hint_foreground_color: Box<dyn color::Color>,
-    hint_background_color: Box<dyn color::Color>,
-  ) -> View<'a> {
-    let matches = state.matches(reverse, unique);
-    let skip = if reverse { matches.len() - 1 } else { 0 };
+  pub fn new(state: &'a mut state::State<'a>, options: ViewOptions<'a>, colors: ViewColors) -> View<'a> {
+    let matches = state.matches(options.reverse, options.unique);
+    let skip = if options.reverse { matches.len() - 1 } else { 0 };
 
     View {
       state,
       skip,
-      multi,
-      contrast,
-      position,
+      multi: options.multi,
+      contrast: options.contrast,
+      position: options.position,
       matches,
-      select_foreground_color,
-      select_background_color,
-      multi_foreground_color,
-      multi_background_color,
-      foreground_color,
-      background_color,
-      hint_foreground_color,
-      hint_background_color,
+      select_foreground_color: colors.select_foreground_color,
+      select_background_color: colors.select_background_color,
+      multi_foreground_color: colors.multi_foreground_color,
+      multi_background_color: colors.multi_background_color,
+      foreground_color: colors.foreground_color,
+      background_color: colors.background_color,
+      hint_foreground_color: colors.hint_foreground_color,
+      hint_background_color: colors.hint_background_color,
       chosen: vec![],
     }
   }
@@ -92,7 +96,7 @@ impl<'a> View<'a> {
     }
   }
 
-  fn render(&self, stdout: &mut dyn Write, typed_hint: &str) -> () {
+  fn render(&self, stdout: &mut dyn Write, typed_hint: &str) {
     write!(stdout, "{}", cursor::Hide).unwrap();
 
     for (index, line) in self.state.lines.iter().enumerate() {
@@ -313,7 +317,7 @@ mod tests {
   use super::*;
 
   fn split(output: &str) -> Vec<&str> {
-    output.split("\n").collect::<Vec<&str>>()
+    output.split('\n').collect::<Vec<&str>>()
   }
 
   #[test]
@@ -326,7 +330,7 @@ mod tests {
       skip: 0,
       multi: false,
       contrast: false,
-      position: &"",
+      position: "",
       matches: vec![],
       select_foreground_color: colors::get_color("default"),
       select_background_color: colors::get_color("default"),

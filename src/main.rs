@@ -175,13 +175,14 @@ fn main() {
   let mut state = state::State::new(&lines, alphabet, &regexp);
 
   let selected = {
-    let mut viewbox = view::View::new(
-      &mut state,
+    let options = view::ViewOptions {
       multi,
       reverse,
       unique,
       contrast,
       position,
+    };
+    let colors = view::ViewColors {
       select_foreground_color,
       select_background_color,
       multi_foreground_color,
@@ -190,7 +191,9 @@ fn main() {
       background_color,
       hint_foreground_color,
       hint_background_color,
-    );
+    };
+
+    let mut viewbox = view::View::new(&mut state, options, colors);
 
     viewbox.present()
   };
@@ -218,7 +221,7 @@ fn main() {
         .open(target)
         .expect("Unable to open the target file");
 
-      file.write(output.as_bytes()).unwrap();
+      file.write_all(output.as_bytes()).unwrap();
     } else {
       print!("{}", output);
     }

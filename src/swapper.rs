@@ -9,16 +9,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 trait Executor {
   fn execute(&mut self, args: Vec<String>) -> String;
-  fn last_executed(&self) -> Option<Vec<String>>;
 }
 
-struct RealShell {
-  executed: Option<Vec<String>>,
-}
+struct RealShell {}
 
 impl RealShell {
   fn new() -> RealShell {
-    RealShell { executed: None }
+    RealShell {}
   }
 }
 
@@ -29,15 +26,9 @@ impl Executor for RealShell {
       .output()
       .expect("Couldn't run it");
 
-    self.executed = Some(args);
-
     let output: String = String::from_utf8_lossy(&execution.stdout).into();
 
     output.trim_end().to_string()
-  }
-
-  fn last_executed(&self) -> Option<Vec<String>> {
-    self.executed.clone()
   }
 }
 
@@ -47,7 +38,6 @@ const TMP_FILE: &str = "/tmp/thumbs-last";
 fn dbg(msg: &str) {
   let mut file = std::fs::OpenOptions::new()
     .create(true)
-    .write(true)
     .append(true)
     .open("/tmp/thumbs.log")
     .expect("Unable to open log file");
@@ -56,7 +46,7 @@ fn dbg(msg: &str) {
 }
 
 pub struct Swapper<'a> {
-  executor: Box<&'a mut dyn Executor>,
+  executor: &'a mut dyn Executor,
   dir: String,
   command: String,
   upcase_command: String,
@@ -75,13 +65,13 @@ pub struct Swapper<'a> {
 
 impl<'a> Swapper<'a> {
   fn new(
-    executor: Box<&'a mut dyn Executor>,
+    executor: &'a mut dyn Executor,
     dir: String,
     command: String,
     upcase_command: String,
     multi_command: String,
     osc52: bool,
-  ) -> Swapper {
+  ) -> Swapper<'a> {
     let since_the_epoch = SystemTime::now()
       .duration_since(UNIX_EPOCH)
       .expect("Time went backwards");
@@ -110,7 +100,7 @@ impl<'a> Swapper<'a> {
   }
 
   pub fn capture_active_pane(&mut self) {
-    let active_command = vec![
+    let active_command = [
       "tmux",
       "list-panes",
       "-F",
@@ -129,7 +119,7 @@ impl<'a> Swapper<'a> {
       .find(|&chunks| *chunks.get(5).unwrap() == "active")
       .expect("Unable to find active pane");
 
-    let pane_id = active_pane.get(0).unwrap();
+    let pane_id = active_pane.first().unwrap();
 
     self.active_pane_id = Some(pane_id.to_string());
 
@@ -141,7 +131,7 @@ impl<'a> Swapper<'a> {
 
     self.active_pane_height = Some(pane_height);
 
-    if active_pane.get(1).unwrap().to_string() == "1" {
+    if *active_pane.get(1).unwrap() == "1" {
       let pane_scroll_position = active_pane
         .get(3)
         .unwrap()
@@ -157,7 +147,7 @@ impl<'a> Swapper<'a> {
   }
 
   pub fn execute_thumbs(&mut self) {
-    let options_command = vec!["tmux", "show", "-g"];
+    let options_command = ["tmux", "show", "-g"];
     let params: Vec<String> = options_command.iter().map(|arg| arg.to_string()).collect();
     let options = self.executor.execute(params);
     let lines: Vec<&str> = options.split('\n').collect();
@@ -171,13 +161,13 @@ impl<'a> Swapper<'a> {
           let name = captures.get(1).unwrap().as_str();
           let value = captures.get(2).unwrap().as_str();
 
-          let boolean_params = vec!["reverse", "unique", "contrast"];
+          let boolean_params = ["reverse", "unique", "contrast"];
 
-          if boolean_params.iter().any(|&x| x == name) {
+          if boolean_params.contains(&name) {
             return vec![format!("--{}", name)];
           }
 
-          let string_params = vec![
+          let string_params = [
             "alphabet",
             "position",
             "fg-color",
@@ -190,7 +180,7 @@ impl<'a> Swapper<'a> {
             "multi-bg-color",
           ];
 
-          if string_params.iter().any(|&x| x == name) {
+          if string_params.contains(&name) {
             return vec![format!("--{}", name), format!("'{}'", value)];
           }
 
@@ -214,7 +204,7 @@ impl<'a> Swapper<'a> {
         "".to_string()
       };
 
-    let active_pane_zoomed = self.active_pane_zoomed.as_mut().unwrap().clone();
+    let active_pane_zoomed = *self.active_pane_zoomed.as_mut().unwrap();
     let zoom_command = if active_pane_zoomed {
       format!("tmux resize-pane -t {} -Z;", active_pane_id)
     } else {
@@ -243,7 +233,7 @@ impl<'a> Swapper<'a> {
         start_signal = self.start_signal
     );
 
-    let thumbs_command = vec![
+    let thumbs_command = [
       "tmux",
       "new-window",
       "-P",
@@ -265,7 +255,7 @@ impl<'a> Swapper<'a> {
     let active_pane_id = self.active_pane_id.as_mut().unwrap().clone();
     let thumbs_pane_id = self.thumbs_pane_id.as_mut().unwrap().clone();
 
-    let swap_command = vec![
+    let swap_command = [
       "tmux",
       "swap-pane",
       "-d",
@@ -285,7 +275,7 @@ impl<'a> Swapper<'a> {
   }
 
   pub fn resize_pane(&mut self) {
-    let active_pane_zoomed = self.active_pane_zoomed.as_mut().unwrap().clone();
+    let active_pane_zoomed = *self.active_pane_zoomed.as_mut().unwrap();
 
     if !active_pane_zoomed {
       return;
@@ -293,7 +283,7 @@ impl<'a> Swapper<'a> {
 
     let thumbs_pane_id = self.thumbs_pane_id.as_mut().unwrap().clone();
 
-    let resize_command = vec!["tmux", "resize-pane", "-t", thumbs_pane_id.as_str(), "-Z"];
+    let resize_command = ["tmux", "resize-pane", "-t", thumbs_pane_id.as_str(), "-Z"];
 
     let params = resize_command
       .iter()
@@ -305,35 +295,35 @@ impl<'a> Swapper<'a> {
   }
 
   pub fn wait_capture(&mut self) {
-    let wait_command = vec!["tmux", "wait-for", self.capture_signal.as_str()];
+    let wait_command = ["tmux", "wait-for", self.capture_signal.as_str()];
     let params = wait_command.iter().map(|arg| arg.to_string()).collect();
 
     self.executor.execute(params);
   }
 
   pub fn start_thumbs(&mut self) {
-    let start_command = vec!["tmux", "wait-for", "-S", self.start_signal.as_str()];
+    let start_command = ["tmux", "wait-for", "-S", self.start_signal.as_str()];
     let params = start_command.iter().map(|arg| arg.to_string()).collect();
 
     self.executor.execute(params);
   }
 
   pub fn wait_thumbs(&mut self) {
-    let wait_command = vec!["tmux", "wait-for", self.signal.as_str()];
+    let wait_command = ["tmux", "wait-for", self.signal.as_str()];
     let params = wait_command.iter().map(|arg| arg.to_string()).collect();
 
     self.executor.execute(params);
   }
 
   pub fn retrieve_content(&mut self) {
-    let retrieve_command = vec!["cat", TMP_FILE];
+    let retrieve_command = ["cat", TMP_FILE];
     let params = retrieve_command.iter().map(|arg| arg.to_string()).collect();
 
     self.content = Some(self.executor.execute(params));
   }
 
   pub fn destroy_content(&mut self) {
-    let retrieve_command = vec!["rm", TMP_FILE];
+    let retrieve_command = ["rm", TMP_FILE];
     let params = retrieve_command.iter().map(|arg| arg.to_string()).collect();
 
     self.executor.execute(params);
@@ -428,7 +418,7 @@ impl<'a> Swapper<'a> {
 
   pub fn execute_final_command(&mut self, text: &str, execute_command: &str) {
     let final_command = str::replace(execute_command, "{}", "${THUMB}");
-    let retrieve_command = vec![
+    let retrieve_command = [
       "bash",
       "-c",
       "THUMB=\"$1\"; eval \"$2\"",
@@ -440,202 +430,6 @@ impl<'a> Swapper<'a> {
     let params = retrieve_command.iter().map(|arg| arg.to_string()).collect();
 
     self.executor.execute(params);
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  struct TestShell {
-    outputs: Vec<String>,
-    executed: Option<Vec<String>>,
-    executions: Vec<Vec<String>>,
-  }
-
-  impl TestShell {
-    fn new(outputs: Vec<String>) -> TestShell {
-      TestShell {
-        executed: None,
-        outputs,
-        executions: vec![],
-      }
-    }
-  }
-
-  impl Executor for TestShell {
-    fn execute(&mut self, args: Vec<String>) -> String {
-      self.executed = Some(args);
-      self.executions.push(self.executed.clone().unwrap());
-      self.outputs.pop().unwrap()
-    }
-
-    fn last_executed(&self) -> Option<Vec<String>> {
-      self.executed.clone()
-    }
-  }
-
-  #[test]
-  fn retrieve_active_pane() {
-    let last_command_outputs = vec!["%97:100:24:1:0:active\n%106:100:24:1:0:nope\n%107:100:24:1:0:nope\n".to_string()];
-    let mut executor = TestShell::new(last_command_outputs);
-    let mut swapper = Swapper::new(
-      Box::new(&mut executor),
-      "".to_string(),
-      "".to_string(),
-      "".to_string(),
-      "".to_string(),
-      false,
-    );
-
-    swapper.capture_active_pane();
-
-    assert_eq!(swapper.active_pane_id.unwrap(), "%97");
-  }
-
-  #[test]
-  fn swap_panes() {
-    let last_command_outputs = vec![
-      "".to_string(),
-      "".to_string(),
-      "%100".to_string(),
-      "".to_string(),
-      "%106:100:24:1:0:nope\n%98:100:24:1:0:active\n%107:100:24:1:0:nope\n".to_string(),
-    ];
-    let mut executor = TestShell::new(last_command_outputs);
-    let mut swapper = Swapper::new(
-      Box::new(&mut executor),
-      "".to_string(),
-      "".to_string(),
-      "".to_string(),
-      "".to_string(),
-      false,
-    );
-
-    swapper.capture_active_pane();
-    swapper.execute_thumbs();
-    swapper.swap_panes();
-
-    let expectation = vec!["tmux", "swap-pane", "-d", "-s", "%98", "-t", "%100"];
-
-    assert_eq!(executor.last_executed().unwrap(), expectation);
-  }
-
-  #[test]
-  fn waits_for_capture_before_swapping_split_panes() {
-    let last_command_outputs = vec![
-      "".to_string(),
-      "".to_string(),
-      "".to_string(),
-      "%100".to_string(),
-      "".to_string(),
-      "%106:0:12:0:0:nope\n%98:0:8:0:0:active\n%107:0:12:0:0:nope\n".to_string(),
-    ];
-    let mut executor = TestShell::new(last_command_outputs);
-    let mut swapper = Swapper::new(
-      Box::new(&mut executor),
-      "".to_string(),
-      "".to_string(),
-      "".to_string(),
-      "".to_string(),
-      false,
-    );
-
-    swapper.capture_active_pane();
-    swapper.execute_thumbs();
-    swapper.swap_panes();
-    swapper.start_thumbs();
-
-    let wait_for_capture_index = executor
-      .executions
-      .iter()
-      .position(|command| {
-        command.len() == 3
-          && command[0] == "tmux"
-          && command[1] == "wait-for"
-          && command[2].starts_with("thumbs-captured-")
-      })
-      .expect("capture must complete before swapping panes");
-
-    let swap_index = executor
-      .executions
-      .iter()
-      .position(|command| command == &vec!["tmux", "swap-pane", "-d", "-s", "%98", "-t", "%100"])
-      .expect("test setup should swap panes");
-
-    assert!(wait_for_capture_index < swap_index);
-
-    let start_index = executor
-      .executions
-      .iter()
-      .position(|command| {
-        command.len() == 4
-          && command[0] == "tmux"
-          && command[1] == "wait-for"
-          && command[2] == "-S"
-          && command[3].starts_with("thumbs-start-")
-      })
-      .expect("thumbs should start after the pane is swapped into place");
-
-    assert!(swap_index < start_index);
-
-    let new_window_command = executor
-      .executions
-      .iter()
-      .find(|command| command.get(1) == Some(&"new-window".to_string()))
-      .expect("test setup should create a thumbs window");
-    let pane_command = new_window_command.last().unwrap();
-
-    let capture_index = pane_command.find("capture=\"$(tmux capture-pane -J -t %98 -p | tail -n 8)\"").unwrap();
-    let capture_signal_index = pane_command.find("tmux wait-for -S thumbs-captured-").unwrap();
-    let start_wait_index = pane_command.find("tmux wait-for thumbs-start-").unwrap();
-    let thumbs_index = pane_command.find("/target/release/thumbs").unwrap();
-
-    assert!(capture_index < capture_signal_index);
-    assert!(capture_signal_index < start_wait_index);
-    assert!(start_wait_index < thumbs_index);
-  }
-
-  #[test]
-  fn quoted_execution() {
-    let last_command_outputs = vec!["Blah blah blah, the ignored user script output".to_string()];
-    let mut executor = TestShell::new(last_command_outputs);
-
-    let user_command = "echo \"{}\"".to_string();
-    let upcase_command = "open \"{}\"".to_string();
-    let multi_command = "open \"{}\"".to_string();
-    let mut swapper = Swapper::new(
-      Box::new(&mut executor),
-      "".to_string(),
-      user_command,
-      upcase_command,
-      multi_command,
-      false,
-    );
-
-    swapper.content = Some(format!(
-      "{do_upcase}:{thumb_text}",
-      do_upcase = false,
-      thumb_text = "foobar;rm *",
-    ));
-    swapper.execute_command();
-
-    let expectation = vec![
-      "bash",
-      // The actual shell command:
-      "-c",
-      "THUMB=\"$1\"; eval \"$2\"",
-      // $0: The non-existent program name.
-      "--",
-      // $1: The value assigned to THUMB above.
-      //     Not interpreted as a shell expression!
-      "foobar;rm *",
-      // $2: The user script, with {} replaced with ${THUMB},
-      //     and will be eval'd with THUMB in scope.
-      "echo \"${THUMB}\"",
-    ];
-
-    assert_eq!(executor.last_executed().unwrap(), expectation);
   }
 }
 
@@ -690,7 +484,7 @@ fn main() -> std::io::Result<()> {
 
   let mut executor = RealShell::new();
   let mut swapper = Swapper::new(
-    Box::new(&mut executor),
+    &mut executor,
     dir.to_string(),
     command.to_string(),
     upcase_command.to_string(),
@@ -709,4 +503,202 @@ fn main() -> std::io::Result<()> {
   swapper.execute_command();
 
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  struct TestShell {
+    outputs: Vec<String>,
+    executed: Option<Vec<String>>,
+    executions: Vec<Vec<String>>,
+  }
+
+  impl TestShell {
+    fn new(outputs: Vec<String>) -> TestShell {
+      TestShell {
+        executed: None,
+        outputs,
+        executions: vec![],
+      }
+    }
+
+    fn last_executed(&self) -> Option<Vec<String>> {
+      self.executed.clone()
+    }
+  }
+
+  impl Executor for TestShell {
+    fn execute(&mut self, args: Vec<String>) -> String {
+      self.executed = Some(args);
+      self.executions.push(self.executed.clone().unwrap());
+      self.outputs.pop().unwrap()
+    }
+  }
+
+  #[test]
+  fn retrieve_active_pane() {
+    let last_command_outputs = vec!["%97:100:24:1:0:active\n%106:100:24:1:0:nope\n%107:100:24:1:0:nope\n".to_string()];
+    let mut executor = TestShell::new(last_command_outputs);
+    let mut swapper = Swapper::new(
+      &mut executor,
+      "".to_string(),
+      "".to_string(),
+      "".to_string(),
+      "".to_string(),
+      false,
+    );
+
+    swapper.capture_active_pane();
+
+    assert_eq!(swapper.active_pane_id.unwrap(), "%97");
+  }
+
+  #[test]
+  fn swap_panes() {
+    let last_command_outputs = vec![
+      "".to_string(),
+      "".to_string(),
+      "%100".to_string(),
+      "".to_string(),
+      "%106:100:24:1:0:nope\n%98:100:24:1:0:active\n%107:100:24:1:0:nope\n".to_string(),
+    ];
+    let mut executor = TestShell::new(last_command_outputs);
+    let mut swapper = Swapper::new(
+      &mut executor,
+      "".to_string(),
+      "".to_string(),
+      "".to_string(),
+      "".to_string(),
+      false,
+    );
+
+    swapper.capture_active_pane();
+    swapper.execute_thumbs();
+    swapper.swap_panes();
+
+    let expectation = ["tmux", "swap-pane", "-d", "-s", "%98", "-t", "%100"];
+
+    assert_eq!(executor.last_executed().unwrap(), expectation);
+  }
+
+  #[test]
+  fn waits_for_capture_before_swapping_split_panes() {
+    let last_command_outputs = vec![
+      "".to_string(),
+      "".to_string(),
+      "".to_string(),
+      "%100".to_string(),
+      "".to_string(),
+      "%106:0:12:0:0:nope\n%98:0:8:0:0:active\n%107:0:12:0:0:nope\n".to_string(),
+    ];
+    let mut executor = TestShell::new(last_command_outputs);
+    let mut swapper = Swapper::new(
+      &mut executor,
+      "".to_string(),
+      "".to_string(),
+      "".to_string(),
+      "".to_string(),
+      false,
+    );
+
+    swapper.capture_active_pane();
+    swapper.execute_thumbs();
+    swapper.swap_panes();
+    swapper.start_thumbs();
+
+    let wait_for_capture_index = executor
+      .executions
+      .iter()
+      .position(|command| {
+        command.len() == 3
+          && command[0] == "tmux"
+          && command[1] == "wait-for"
+          && command[2].starts_with("thumbs-captured-")
+      })
+      .expect("capture must complete before swapping panes");
+
+    let swap_index = executor
+      .executions
+      .iter()
+      .position(|command| command.as_slice() == ["tmux", "swap-pane", "-d", "-s", "%98", "-t", "%100"])
+      .expect("test setup should swap panes");
+
+    assert!(wait_for_capture_index < swap_index);
+
+    let start_index = executor
+      .executions
+      .iter()
+      .position(|command| {
+        command.len() == 4
+          && command[0] == "tmux"
+          && command[1] == "wait-for"
+          && command[2] == "-S"
+          && command[3].starts_with("thumbs-start-")
+      })
+      .expect("thumbs should start after the pane is swapped into place");
+
+    assert!(swap_index < start_index);
+
+    let new_window_command = executor
+      .executions
+      .iter()
+      .find(|command| command.get(1) == Some(&"new-window".to_string()))
+      .expect("test setup should create a thumbs window");
+    let pane_command = new_window_command.last().unwrap();
+
+    let capture_index = pane_command
+      .find("capture=\"$(tmux capture-pane -J -t %98 -p | tail -n 8)\"")
+      .unwrap();
+    let capture_signal_index = pane_command.find("tmux wait-for -S thumbs-captured-").unwrap();
+    let start_wait_index = pane_command.find("tmux wait-for thumbs-start-").unwrap();
+    let thumbs_index = pane_command.find("/target/release/thumbs").unwrap();
+
+    assert!(capture_index < capture_signal_index);
+    assert!(capture_signal_index < start_wait_index);
+    assert!(start_wait_index < thumbs_index);
+  }
+
+  #[test]
+  fn quoted_execution() {
+    let last_command_outputs = vec!["Blah blah blah, the ignored user script output".to_string()];
+    let mut executor = TestShell::new(last_command_outputs);
+
+    let user_command = "echo \"{}\"".to_string();
+    let upcase_command = "open \"{}\"".to_string();
+    let multi_command = "open \"{}\"".to_string();
+    let mut swapper = Swapper::new(
+      &mut executor,
+      "".to_string(),
+      user_command,
+      upcase_command,
+      multi_command,
+      false,
+    );
+
+    swapper.content = Some(format!(
+      "{do_upcase}:{thumb_text}",
+      do_upcase = false,
+      thumb_text = "foobar;rm *",
+    ));
+    swapper.execute_command();
+
+    let expectation = [
+      "bash",
+      // The actual shell command:
+      "-c",
+      "THUMB=\"$1\"; eval \"$2\"",
+      // $0: The non-existent program name.
+      "--",
+      // $1: The value assigned to THUMB above.
+      //     Not interpreted as a shell expression!
+      "foobar;rm *",
+      // $2: The user script, with {} replaced with ${THUMB},
+      //     and will be eval'd with THUMB in scope.
+      "echo \"${THUMB}\"",
+    ];
+
+    assert_eq!(executor.last_executed().unwrap(), expectation);
+  }
 }
