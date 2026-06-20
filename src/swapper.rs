@@ -3,6 +3,7 @@ extern crate clap;
 use self::clap::{Arg, ArgAction, Command as ClapCommand};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use regex::Regex;
+use std::fmt;
 use std::io::Write;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -10,8 +11,65 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static RUN_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommandOutput {
+    stdout: String,
+    stderr: String,
+    status: Option<i32>,
+    success: bool,
+}
+
+impl CommandOutput {
+    #[cfg(test)]
+    fn success(stdout: String) -> CommandOutput {
+        CommandOutput {
+            stdout,
+            stderr: String::new(),
+            status: Some(0),
+            success: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommandError {
+    command: Vec<String>,
+    status: Option<i32>,
+    stderr: String,
+}
+
+impl fmt::Display for CommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let status = self
+            .status
+            .map(|status| status.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        if self.stderr.is_empty() {
+            write!(
+                f,
+                "command `{}` failed with status {}",
+                self.command.join(" "),
+                status
+            )
+        } else {
+            write!(
+                f,
+                "command `{}` failed with status {}: {}",
+                self.command.join(" "),
+                status,
+                self.stderr
+            )
+        }
+    }
+}
+
+impl std::error::Error for CommandError {}
+
+type CommandResult<T> = Result<T, CommandError>;
+
 trait Executor {
-    fn execute(&mut self, args: Vec<String>) -> String;
+    fn execute(&mut self, args: Vec<String>) -> CommandResult<CommandOutput>;
 }
 
 struct RealShell {}
@@ -23,16 +81,51 @@ impl RealShell {
 }
 
 impl Executor for RealShell {
-    fn execute(&mut self, args: Vec<String>) -> String {
+    fn execute(&mut self, args: Vec<String>) -> CommandResult<CommandOutput> {
+        if args.is_empty() {
+            return Err(CommandError {
+                command: args,
+                status: None,
+                stderr: "empty command".to_string(),
+            });
+        }
+
         let execution = Command::new(args[0].as_str())
             .args(&args[1..])
             .output()
-            .expect("Couldn't run it");
+            .map_err(|error| CommandError {
+                command: args.clone(),
+                status: None,
+                stderr: error.to_string(),
+            })?;
 
-        let output: String = String::from_utf8_lossy(&execution.stdout).into();
+        let output = CommandOutput {
+            stdout: String::from_utf8_lossy(&execution.stdout)
+                .trim_end()
+                .to_string(),
+            stderr: String::from_utf8_lossy(&execution.stderr)
+                .trim_end()
+                .to_string(),
+            status: execution.status.code(),
+            success: execution.status.success(),
+        };
 
-        output.trim_end().to_string()
+        if output.success {
+            Ok(output)
+        } else {
+            Err(CommandError {
+                command: args,
+                status: output.status,
+                stderr: output.stderr,
+            })
+        }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SelectionOutcome {
+    Executed,
+    Cancelled,
 }
 
 #[allow(dead_code)]
@@ -112,7 +205,7 @@ impl<'a> Swapper<'a> {
         }
     }
 
-    pub fn capture_active_pane(&mut self) {
+    fn capture_active_pane(&mut self) -> CommandResult<()> {
         let active_command = [
       "tmux",
       "list-panes",
@@ -122,7 +215,8 @@ impl<'a> Swapper<'a> {
 
         let output = self
             .executor
-            .execute(active_command.iter().map(|arg| arg.to_string()).collect());
+            .execute(active_command.iter().map(|arg| arg.to_string()).collect())?
+            .stdout;
 
         let lines: Vec<&str> = output.split('\n').collect();
         let chunks: Vec<Vec<&str>> = lines
@@ -163,12 +257,14 @@ impl<'a> Swapper<'a> {
             == "1";
 
         self.active_pane_zoomed = Some(zoomed_pane);
+
+        Ok(())
     }
 
-    pub fn execute_thumbs(&mut self) {
+    fn execute_thumbs(&mut self) -> CommandResult<()> {
         let options_command = ["tmux", "show", "-g"];
         let params: Vec<String> = options_command.iter().map(|arg| arg.to_string()).collect();
-        let options = self.executor.execute(params);
+        let options = self.executor.execute(params)?.stdout;
         let lines: Vec<&str> = options.split('\n').collect();
 
         let pattern = Regex::new(r#"^@thumbs-([\w\-0-9]+)\s+"?([^"]+)"?$"#).unwrap();
@@ -274,11 +370,13 @@ impl<'a> Swapper<'a> {
 
         let params: Vec<String> = thumbs_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.thumbs_pane_id = Some(self.executor.execute(params));
-        self.wait_capture();
+        self.thumbs_pane_id = Some(self.executor.execute(params)?.stdout);
+        self.wait_capture()?;
+
+        Ok(())
     }
 
-    pub fn swap_panes(&mut self) {
+    fn swap_panes(&mut self) -> CommandResult<()> {
         let active_pane_id = self.active_pane_id.as_mut().unwrap().clone();
         let thumbs_pane_id = self.thumbs_pane_id.as_mut().unwrap().clone();
 
@@ -298,14 +396,16 @@ impl<'a> Swapper<'a> {
             .map(|arg| arg.to_string())
             .collect();
 
-        self.executor.execute(params);
+        self.executor.execute(params)?;
+
+        Ok(())
     }
 
-    pub fn resize_pane(&mut self) {
+    fn resize_pane(&mut self) -> CommandResult<()> {
         let active_pane_zoomed = *self.active_pane_zoomed.as_mut().unwrap();
 
         if !active_pane_zoomed {
-            return;
+            return Ok(());
         }
 
         let thumbs_pane_id = self.thumbs_pane_id.as_mut().unwrap().clone();
@@ -318,48 +418,71 @@ impl<'a> Swapper<'a> {
             .map(|arg| arg.to_string())
             .collect();
 
-        self.executor.execute(params);
+        self.executor.execute(params)?;
+
+        Ok(())
     }
 
-    pub fn wait_capture(&mut self) {
+    fn wait_capture(&mut self) -> CommandResult<()> {
         let wait_command = ["tmux", "wait-for", self.capture_signal.as_str()];
         let params = wait_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.executor.execute(params);
+        self.executor.execute(params)?;
+
+        Ok(())
     }
 
-    pub fn start_thumbs(&mut self) {
+    fn start_thumbs(&mut self) -> CommandResult<()> {
         let start_command = ["tmux", "wait-for", "-S", self.start_signal.as_str()];
         let params = start_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.executor.execute(params);
+        self.executor.execute(params)?;
+
+        Ok(())
     }
 
-    pub fn wait_thumbs(&mut self) {
+    fn wait_thumbs(&mut self) -> CommandResult<()> {
         let wait_command = ["tmux", "wait-for", self.signal.as_str()];
         let params = wait_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.executor.execute(params);
+        self.executor.execute(params)?;
+
+        Ok(())
     }
 
-    pub fn retrieve_content(&mut self) {
+    fn retrieve_content(&mut self) -> CommandResult<()> {
         let retrieve_command = ["cat", self.result_path.as_str()];
         let params = retrieve_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.content = Some(self.executor.execute(params));
+        match self.executor.execute(params) {
+            Ok(output) => self.content = Some(output.stdout),
+            Err(error) if missing_result_file_error(&error) => self.content = None,
+            Err(error) => return Err(error),
+        }
+
+        Ok(())
     }
 
-    pub fn destroy_content(&mut self) {
-        let retrieve_command = ["rm", self.result_path.as_str()];
+    fn destroy_content(&mut self) -> CommandResult<()> {
+        let retrieve_command = ["rm", "-f", self.result_path.as_str()];
         let params = retrieve_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.executor.execute(params);
+        self.executor.execute(params)?;
+
+        Ok(())
     }
 
     pub fn send_osc52(&mut self) {}
 
-    pub fn execute_command(&mut self) {
-        let content = self.content.clone().unwrap();
+    fn execute_command(&mut self) -> CommandResult<SelectionOutcome> {
+        let Some(content) = self.content.clone() else {
+            return Ok(SelectionOutcome::Cancelled);
+        };
+
+        if content.is_empty() {
+            return Ok(SelectionOutcome::Cancelled);
+        }
+
         let items: Vec<&str> = content.split('\n').collect();
 
         if items.len() > 1 {
@@ -369,9 +492,9 @@ impl<'a> Swapper<'a> {
                 .collect::<Vec<&str>>()
                 .join(" ");
 
-            self.execute_final_command(&text, &self.multi_command.clone());
+            self.execute_final_command(&text, &self.multi_command.clone())?;
 
-            return;
+            return Ok(SelectionOutcome::Executed);
         }
 
         // Only one item
@@ -439,12 +562,16 @@ impl<'a> Swapper<'a> {
                 // Ideally user commands would just use "${THUMB}" to begin with rather than having any
                 // sort of ad-hoc string splicing here at all, and then they could specify the quoting they
                 // want, but that would break backwards compatibility.
-                self.execute_final_command(text.trim_end(), &execute_command);
+                self.execute_final_command(text.trim_end(), &execute_command)?;
+
+                return Ok(SelectionOutcome::Executed);
             }
         }
+
+        Ok(SelectionOutcome::Cancelled)
     }
 
-    pub fn execute_final_command(&mut self, text: &str, execute_command: &str) {
+    fn execute_final_command(&mut self, text: &str, execute_command: &str) -> CommandResult<()> {
         let final_command = str::replace(execute_command, "{}", "${THUMB}");
         let retrieve_command = [
             "bash",
@@ -457,8 +584,19 @@ impl<'a> Swapper<'a> {
 
         let params = retrieve_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.executor.execute(params);
+        self.executor.execute(params)?;
+
+        Ok(())
     }
+}
+
+fn missing_result_file_error(error: &CommandError) -> bool {
+    error.command.first().map(String::as_str) == Some("cat")
+        && error
+            .command
+            .get(1)
+            .map(|path| !std::path::Path::new(path).exists())
+            .unwrap_or(false)
 }
 
 fn app_args() -> clap::ArgMatches {
@@ -499,7 +637,7 @@ fn app_args() -> clap::ArgMatches {
     .get_matches()
 }
 
-fn main() -> std::io::Result<()> {
+fn run() -> CommandResult<SelectionOutcome> {
     let args = app_args();
     let dir = args.get_one::<String>("dir").unwrap().as_str();
     let command = args.get_one::<String>("command").unwrap().as_str();
@@ -508,7 +646,13 @@ fn main() -> std::io::Result<()> {
     let osc52 = args.get_flag("osc52");
 
     if dir.is_empty() {
-        panic!("Invalid tmux-thumbs execution. Are you trying to execute tmux-thumbs directly?")
+        return Err(CommandError {
+            command: vec!["tmux-thumbs".to_string()],
+            status: None,
+            stderr:
+                "Invalid tmux-thumbs execution. Are you trying to execute tmux-thumbs directly?"
+                    .to_string(),
+        });
     }
 
     let mut executor = RealShell::new();
@@ -521,17 +665,22 @@ fn main() -> std::io::Result<()> {
         osc52,
     );
 
-    swapper.capture_active_pane();
-    swapper.execute_thumbs();
-    swapper.swap_panes();
-    swapper.resize_pane();
-    swapper.start_thumbs();
-    swapper.wait_thumbs();
-    swapper.retrieve_content();
-    swapper.destroy_content();
-    swapper.execute_command();
+    swapper.capture_active_pane()?;
+    swapper.execute_thumbs()?;
+    swapper.swap_panes()?;
+    swapper.resize_pane()?;
+    swapper.start_thumbs()?;
+    swapper.wait_thumbs()?;
+    swapper.retrieve_content()?;
+    swapper.destroy_content()?;
+    swapper.execute_command()
+}
 
-    Ok(())
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("{}", error);
+        std::process::exit(1);
+    }
 }
 
 #[cfg(test)]
@@ -539,13 +688,23 @@ mod tests {
     use super::*;
 
     struct TestShell {
-        outputs: Vec<String>,
+        outputs: Vec<CommandResult<CommandOutput>>,
         executed: Option<Vec<String>>,
         executions: Vec<Vec<String>>,
     }
 
     impl TestShell {
         fn new(outputs: Vec<String>) -> TestShell {
+            TestShell::new_results(
+                outputs
+                    .into_iter()
+                    .map(CommandOutput::success)
+                    .map(Ok)
+                    .collect(),
+            )
+        }
+
+        fn new_results(outputs: Vec<CommandResult<CommandOutput>>) -> TestShell {
             TestShell {
                 executed: None,
                 outputs,
@@ -565,10 +724,20 @@ mod tests {
     }
 
     impl Executor for TestShell {
-        fn execute(&mut self, args: Vec<String>) -> String {
-            self.executed = Some(args);
-            self.executions.push(self.executed.clone().unwrap());
-            self.outputs.pop().unwrap()
+        fn execute(&mut self, args: Vec<String>) -> CommandResult<CommandOutput> {
+            self.executed = Some(args.clone());
+            self.executions.push(args.clone());
+
+            match self.outputs.pop().unwrap() {
+                Ok(output) => Ok(output),
+                Err(mut error) => {
+                    if error.command.is_empty() {
+                        error.command = args;
+                    }
+
+                    Err(error)
+                }
+            }
         }
     }
 
@@ -586,9 +755,36 @@ mod tests {
             false,
         );
 
-        swapper.capture_active_pane();
+        swapper.capture_active_pane().unwrap();
 
         assert_eq!(swapper.active_pane_id.unwrap(), "%97");
+    }
+
+    #[test]
+    fn failing_tmux_command_returns_command_error() {
+        let last_command_outputs = vec![Err(CommandError {
+            command: vec![],
+            status: Some(1),
+            stderr: "tmux failed".to_string(),
+        })];
+        let mut executor = TestShell::new_results(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            false,
+        );
+
+        let error = swapper.capture_active_pane().unwrap_err();
+
+        assert_eq!(error.command[0], "tmux");
+        assert_eq!(error.status, Some(1));
+        assert_eq!(error.stderr, "tmux failed");
+        assert!(error.to_string().contains("tmux list-panes"));
+        assert!(error.to_string().contains("status 1"));
+        assert!(error.to_string().contains("tmux failed"));
     }
 
     #[test]
@@ -610,9 +806,9 @@ mod tests {
             false,
         );
 
-        swapper.capture_active_pane();
-        swapper.execute_thumbs();
-        swapper.swap_panes();
+        swapper.capture_active_pane().unwrap();
+        swapper.execute_thumbs().unwrap();
+        swapper.swap_panes().unwrap();
 
         let expectation = ["tmux", "swap-pane", "-d", "-s", "%98", "-t", "%100"];
 
@@ -639,10 +835,10 @@ mod tests {
             false,
         );
 
-        swapper.capture_active_pane();
-        swapper.execute_thumbs();
-        swapper.swap_panes();
-        swapper.start_thumbs();
+        swapper.capture_active_pane().unwrap();
+        swapper.execute_thumbs().unwrap();
+        swapper.swap_panes().unwrap();
+        swapper.start_thumbs().unwrap();
 
         let wait_for_capture_index = executor
             .executions
@@ -723,7 +919,7 @@ mod tests {
             do_upcase = false,
             thumb_text = "foobar;rm *",
         ));
-        swapper.execute_command();
+        let outcome = swapper.execute_command().unwrap();
 
         let expectation = [
             "bash",
@@ -741,6 +937,33 @@ mod tests {
         ];
 
         assert_eq!(executor.last_executed().unwrap(), expectation);
+        assert_eq!(outcome, SelectionOutcome::Executed);
+    }
+
+    #[test]
+    fn failing_final_command_returns_command_error() {
+        let last_command_outputs = vec![Err(CommandError {
+            command: vec![],
+            status: Some(2),
+            stderr: "bash failed".to_string(),
+        })];
+        let mut executor = TestShell::new_results(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "".to_string(),
+            "echo {}".to_string(),
+            "open {}".to_string(),
+            "multi {}".to_string(),
+            false,
+        );
+
+        swapper.content = Some("false:foobar".to_string());
+
+        let error = swapper.execute_command().unwrap_err();
+
+        assert_eq!(error.command[0], "bash");
+        assert_eq!(error.status, Some(2));
+        assert_eq!(error.stderr, "bash failed");
     }
 
     #[test]
@@ -757,9 +980,10 @@ mod tests {
         );
 
         swapper.content = Some("".to_string());
-        swapper.execute_command();
+        let outcome = swapper.execute_command().unwrap();
 
         assert_eq!(executor.last_executed(), None);
+        assert_eq!(outcome, SelectionOutcome::Cancelled);
     }
 
     #[test]
@@ -776,9 +1000,10 @@ mod tests {
         );
 
         swapper.content = Some("not-a-selection".to_string());
-        swapper.execute_command();
+        let outcome = swapper.execute_command().unwrap();
 
         assert_eq!(executor.last_executed(), None);
+        assert_eq!(outcome, SelectionOutcome::Cancelled);
     }
 
     #[test]
@@ -801,11 +1026,11 @@ mod tests {
             false,
         );
 
-        swapper.capture_active_pane();
-        swapper.execute_thumbs();
+        swapper.capture_active_pane().unwrap();
+        swapper.execute_thumbs().unwrap();
         let result_path = swapper.result_path.clone();
-        swapper.retrieve_content();
-        swapper.destroy_content();
+        swapper.retrieve_content().unwrap();
+        swapper.destroy_content().unwrap();
 
         let new_window_command = executor
             .new_window_command()
@@ -821,7 +1046,7 @@ mod tests {
         assert!(executor
             .executions
             .iter()
-            .any(|command| command.as_slice() == ["rm", result_path.as_str()]));
+            .any(|command| command.as_slice() == ["rm", "-f", result_path.as_str()]));
     }
 
     #[test]
@@ -860,8 +1085,12 @@ mod tests {
 
     #[test]
     fn missing_result_file_content_does_not_execute_command() {
-        let last_command_outputs = vec!["".to_string()];
-        let mut executor = TestShell::new(last_command_outputs);
+        let last_command_outputs = vec![Err(CommandError {
+            command: vec![],
+            status: Some(1),
+            stderr: "cat: missing: No such file or directory".to_string(),
+        })];
+        let mut executor = TestShell::new_results(last_command_outputs);
         let mut swapper = Swapper::new(
             &mut executor,
             "".to_string(),
@@ -871,11 +1100,12 @@ mod tests {
             false,
         );
 
-        swapper.retrieve_content();
-        swapper.execute_command();
+        swapper.retrieve_content().unwrap();
+        let outcome = swapper.execute_command().unwrap();
 
         assert_eq!(executor.executions.len(), 1);
         assert_eq!(executor.executions[0][0], "cat");
+        assert_eq!(outcome, SelectionOutcome::Cancelled);
     }
 
     #[test]
@@ -896,8 +1126,8 @@ mod tests {
             false,
         );
 
-        swapper.capture_active_pane();
-        swapper.execute_thumbs();
+        swapper.capture_active_pane().unwrap();
+        swapper.execute_thumbs().unwrap();
 
         let new_window_command = executor
             .new_window_command()
@@ -926,8 +1156,8 @@ mod tests {
             false,
         );
 
-        swapper.capture_active_pane();
-        swapper.execute_thumbs();
+        swapper.capture_active_pane().unwrap();
+        swapper.execute_thumbs().unwrap();
 
         let new_window_command = executor
             .new_window_command()
