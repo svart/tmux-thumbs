@@ -10,6 +10,7 @@ type PickerResult<T> = Result<T, PickerError>;
 #[derive(Debug)]
 enum PickerError {
     Configuration(String),
+    Terminal(String),
     Io(io::Error),
 }
 
@@ -17,6 +18,7 @@ impl fmt::Display for PickerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PickerError::Configuration(message) => write!(f, "{}", message),
+            PickerError::Terminal(message) => write!(f, "{}", message),
             PickerError::Io(error) => write!(f, "{}", error),
         }
     }
@@ -292,7 +294,9 @@ fn run_with_options(options: ThumbsOptions) -> PickerResult<bool> {
 
         let mut viewbox = view::View::new(&mut state, view_options, view_colors);
 
-        viewbox.present()
+        viewbox.present().map_err(|error| {
+            PickerError::Terminal(format!("failed to present picker: {}", error))
+        })?
     };
 
     if !selected.is_empty() {
@@ -430,5 +434,15 @@ mod tests {
         let error = ThumbsOptions::from_matches(&matches).unwrap_err();
 
         assert_eq!(error.to_string(), "Unknown alphabet: wat");
+    }
+
+    #[test]
+    fn picker_error_displays_terminal_context() {
+        let error = PickerError::Terminal("failed to present picker: terminal unavailable".into());
+
+        assert_eq!(
+            error.to_string(),
+            "failed to present picker: terminal unavailable"
+        );
     }
 }

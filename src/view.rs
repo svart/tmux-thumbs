@@ -1,7 +1,7 @@
 use super::*;
 use std::char;
 use std::fmt;
-use std::io::{stdout, Read, Write};
+use std::io::{self, stdout, Read, Write};
 use termion::async_stdin;
 use termion::event::Key;
 use termion::input::TermRead;
@@ -73,6 +73,7 @@ impl fmt::Display for HintPositionParseError {
 
 impl std::error::Error for HintPositionParseError {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CaptureEvent {
     Exit,
     Hint,
@@ -158,8 +159,8 @@ impl<'a> View<'a> {
         }
     }
 
-    fn render(&self, stdout: &mut dyn Write, typed_hint: &str) {
-        write!(stdout, "{}", cursor::Hide).unwrap();
+    fn render(&self, stdout: &mut dyn Write, typed_hint: &str) -> io::Result<()> {
+        write!(stdout, "{}", cursor::Hide)?;
 
         for (index, line) in self.state.lines().iter().enumerate() {
             let clean = line.trim_end_matches(|c: char| c.is_whitespace());
@@ -170,8 +171,7 @@ impl<'a> View<'a> {
                     "{goto}{text}",
                     goto = cursor::Goto(1, terminal_position(index)),
                     text = line
-                )
-                .unwrap();
+                )?;
             }
         }
 
@@ -210,8 +210,7 @@ impl<'a> View<'a> {
                 resetf = color::Fg(color::Reset),
                 resetb = color::Bg(color::Reset),
                 text = &text
-            )
-            .unwrap();
+            )?;
 
             if let Some(ref hint) = mat.hint {
                 let match_text_width = text.width_cjk();
@@ -233,8 +232,7 @@ impl<'a> View<'a> {
                     resetf = color::Fg(color::Reset),
                     resetb = color::Bg(color::Reset),
                     text = &hint_text
-                )
-                .unwrap();
+                )?;
 
                 if hint.starts_with(typed_hint) {
                     write!(
@@ -246,18 +244,17 @@ impl<'a> View<'a> {
                         resetf = color::Fg(color::Reset),
                         resetb = color::Bg(color::Reset),
                         text = &typed_hint
-                    )
-                    .unwrap();
+                    )?;
                 }
             }
         }
 
-        stdout.flush().unwrap();
+        stdout.flush()
     }
 
-    fn listen(&mut self, stdin: &mut dyn Read, stdout: &mut dyn Write) -> CaptureEvent {
+    fn listen(&mut self, stdin: &mut dyn Read, stdout: &mut dyn Write) -> io::Result<CaptureEvent> {
         if self.matches.is_empty() {
-            return CaptureEvent::Exit;
+            return Ok(CaptureEvent::Exit);
         }
 
         let mut typed_hint: String = "".to_owned();
@@ -275,7 +272,7 @@ impl<'a> View<'a> {
             .max()
             .expect("matches must have hints");
 
-        self.render(stdout, &typed_hint);
+        self.render(stdout, &typed_hint)?;
 
         loop {
             match stdin.keys().next() {
@@ -293,10 +290,10 @@ impl<'a> View<'a> {
                             ) {
                                 KeyOutcome::Continue => {}
                                 KeyOutcome::Exit => break,
-                                KeyOutcome::Hint => return CaptureEvent::Hint,
+                                KeyOutcome::Hint => return Ok(CaptureEvent::Hint),
                             }
                         }
-                        Err(err) => panic!("{}", err),
+                        Err(err) => return Err(err),
                     }
 
                     stdin
@@ -310,28 +307,24 @@ impl<'a> View<'a> {
                 }
             }
 
-            self.render(stdout, &typed_hint);
+            self.render(stdout, &typed_hint)?;
         }
 
-        CaptureEvent::Exit
+        Ok(CaptureEvent::Exit)
     }
 
-    pub fn present(&mut self) -> Vec<(String, bool)> {
+    pub fn present(&mut self) -> io::Result<Vec<(String, bool)>> {
         let mut stdin = async_stdin();
-        let mut stdout = stdout()
-            .into_raw_mode()
-            .unwrap()
-            .into_alternate_screen()
-            .unwrap();
+        let mut stdout = stdout().into_raw_mode()?.into_alternate_screen()?;
 
-        let hints = match self.listen(&mut stdin, &mut stdout) {
+        let hints = match self.listen(&mut stdin, &mut stdout)? {
             CaptureEvent::Exit => vec![],
             CaptureEvent::Hint => self.chosen.clone(),
         };
 
-        write!(stdout, "{}", cursor::Show).unwrap();
+        write!(stdout, "{}", cursor::Show)?;
 
-        hints
+        Ok(hints)
     }
 }
 
@@ -513,6 +506,38 @@ mod tests {
             unique: false,
             contrast,
             position,
+        }
+    }
+
+    struct FailingWriter;
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::Other, "write failed"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct FlushFailingWriter;
+
+    impl Write for FlushFailingWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::new(io::ErrorKind::Other, "flush failed"))
+        }
+    }
+
+    struct FailingReader;
+
+    impl Read for FailingReader {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::Other, "read failed"))
         }
     }
 
@@ -810,7 +835,7 @@ mod tests {
         );
         let mut output = Vec::new();
 
-        view.render(&mut output, "");
+        view.render(&mut output, "").unwrap();
 
         let rendered = String::from_utf8(output).unwrap();
         assert!(rendered.contains("127.0.0.1"));
@@ -829,7 +854,7 @@ mod tests {
         );
         let mut output = Vec::new();
 
-        view.render(&mut output, "a");
+        view.render(&mut output, "a").unwrap();
 
         let rendered = String::from_utf8(output).unwrap();
         assert_eq!(rendered.matches('a').count(), 2);
@@ -850,10 +875,62 @@ mod tests {
         );
         let mut output = Vec::new();
 
-        view.render(&mut output, "");
+        view.render(&mut output, "").unwrap();
 
         let rendered = String::from_utf8(output).unwrap();
         assert!(rendered.contains(&format!("{}", color::Fg(color::Red))));
+    }
+
+    #[test]
+    fn render_returns_write_errors() {
+        let lines = split("127.0.0.1");
+        let custom = [].to_vec();
+        let mut state = state::State::new(&lines, "abcd", &custom);
+        let view = View::new(
+            &mut state,
+            default_options(HintPosition::Left, false),
+            default_colors(),
+        );
+        let mut output = FailingWriter;
+
+        let error = view.render(&mut output, "").unwrap_err();
+
+        assert_eq!(error.to_string(), "write failed");
+    }
+
+    #[test]
+    fn render_returns_flush_errors() {
+        let lines = split("127.0.0.1");
+        let custom = [].to_vec();
+        let mut state = state::State::new(&lines, "abcd", &custom);
+        let view = View::new(
+            &mut state,
+            default_options(HintPosition::Left, false),
+            default_colors(),
+        );
+        let mut output = FlushFailingWriter;
+
+        let error = view.render(&mut output, "").unwrap_err();
+
+        assert_eq!(error.to_string(), "flush failed");
+    }
+
+    #[test]
+    fn listen_returns_input_read_errors() {
+        let lines = split("127.0.0.1");
+        let custom = [].to_vec();
+        let mut state = state::State::new(&lines, "abcd", &custom);
+        let mut view = View::new(
+            &mut state,
+            default_options(HintPosition::Left, false),
+            default_colors(),
+        );
+        let mut input = FailingReader;
+        let mut output = Vec::new();
+
+        let error = view.listen(&mut input, &mut output).unwrap_err();
+
+        assert_eq!(error.to_string(), "read failed");
     }
 
     #[test]
