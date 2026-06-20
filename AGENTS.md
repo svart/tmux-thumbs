@@ -7,17 +7,16 @@
 - Runtime plugin entry is `tmux-thumbs.tmux` -> `tmux-thumbs.sh` -> `target/release/tmux-thumbs` -> `target/release/thumbs`.
 - Prefer small, behavior-preserving changes. Existing tmux behavior, CLI flags, and command templating are user-facing API.
 
-## Commands
 
-- Format check: `cargo fmt --all -- --check`.
-- Build debug binaries: `cargo build --verbose`.
-- Build runtime release binaries: `cargo build --release`.
-- Full test suite: `cargo test --verbose`.
-- Focus a `thumbs` test: `cargo test --lib state::tests::match_urls -- --exact`.
-- Focus a `tmux-thumbs` test: `cargo test --lib tmux::tests::quoted_execution -- --exact`.
-- CI order in `.github/workflows/rust.yml`: format, build, test, coverage.
-- Coverage command: `cargo tarpaulin -o Lcov --output-dir ./coverage`.
-- Local coverage requires `cargo-tarpaulin`; CI installs version `0.18.0`.
+Before committing or handing work off for review, run the fast full-feature
+gate:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
+cargo build --all-features
+```
 
 ## Source Map
 
@@ -35,9 +34,6 @@
 | `tmux-thumbs.tmux` | `thumbs-pick` command alias and `@thumbs-key` binding |
 | `tmux-thumbs.sh` | release-binary/version check, installer launch, top-level option forwarding to `tmux-thumbs` |
 | `tmux-thumbs-install.sh` | interactive install/update flow for compile or release download |
-| `.github/workflows/rust.yml` | CI checks and non-release artifact builds |
-| `.github/workflows/audit.yml` | cargo audit check when dependency manifests change |
-| `.github/workflows/release.yml` | release packaging for Linux musl and Apple Darwin |
 
 ## Source Of Truth
 
@@ -46,7 +42,6 @@
 - Current `tmux-thumbs` CLI surface is `app_args()` in `src/tmux.rs`.
 - Current tmux user options are split between `tmux-thumbs.sh`, `tmux-thumbs.tmux`, and `src/tmux.rs`.
 - README is user-facing documentation, but it can lag implementation. Verify version strings, help output, options, and defaults against source before editing behavior.
-- Tests are inline under `#[cfg(test)]` in the source files, not in a separate `tests/` directory.
 
 ## Runtime Flow
 
@@ -80,13 +75,6 @@
 - For UI rendering, keyboard handling, alternate-screen behavior, or tmux pane flow, supplement unit tests with a manual smoke test in tmux after `cargo build --release`.
 - For shell wrapper or installer changes, build release binaries first if invoking `tmux-thumbs.sh`; otherwise it may open the interactive installer.
 - For docs-only changes, tests are usually unnecessary; still check commands and file references against source.
-
-## Manual Smoke Test
-
-- Build runtime binaries with `cargo build --release`.
-- In a tmux session, source the plugin with `tmux source-file tmux-thumbs.tmux`.
-- Run `thumbs-pick` or press the configured key in a pane containing URLs, paths, SHAs, and numbers.
-- Verify normal pick, uppercase pick behavior, multi-select, custom `@thumbs-regexp-*`, and configured command execution if the change touches those areas.
 
 ## Editing Rules For This Repo
 
