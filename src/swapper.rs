@@ -360,6 +360,95 @@ fn tmux_option_value(raw: &str) -> &str {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum PickerArg {
+    Flag(String),
+    Value { name: String, value: String },
+    Regexp(String),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct PickerArgs {
+    args: Vec<PickerArg>,
+}
+
+impl PickerArgs {
+    fn from_tmux_options(options: &str) -> PickerArgs {
+        let pattern = Regex::new(r#"^@thumbs-([\w\-0-9]+)\s+(.+)$"#).unwrap();
+        let mut args = Vec::new();
+
+        for line in options.lines() {
+            let Some(captures) = pattern.captures(line) else {
+                continue;
+            };
+
+            let name = captures.get(1).unwrap().as_str();
+            let value = tmux_option_value(captures.get(2).unwrap().as_str());
+
+            if is_boolean_picker_arg(name) {
+                if is_true_tmux_value(value) {
+                    args.push(PickerArg::Flag(name.to_string()));
+                }
+
+                continue;
+            }
+
+            if value.is_empty() {
+                continue;
+            }
+
+            if is_string_picker_arg(name) {
+                args.push(PickerArg::Value {
+                    name: name.to_string(),
+                    value: value.to_string(),
+                });
+            } else if name.starts_with("regexp") {
+                args.push(PickerArg::Regexp(value.replace("\\\\", "\\")));
+            }
+        }
+
+        PickerArgs { args }
+    }
+
+    fn render_shell_args(&self) -> Vec<String> {
+        self.args
+            .iter()
+            .flat_map(|arg| match arg {
+                PickerArg::Flag(name) => vec![format!("--{}", name)],
+                PickerArg::Value { name, value } => vec![format!("--{}", name), shell_quote(value)],
+                PickerArg::Regexp(value) => vec!["--regexp".to_string(), shell_quote(value)],
+            })
+            .collect()
+    }
+}
+
+fn is_boolean_picker_arg(name: &str) -> bool {
+    ["reverse", "unique", "contrast"].contains(&name)
+}
+
+fn is_string_picker_arg(name: &str) -> bool {
+    [
+        "alphabet",
+        "position",
+        "fg-color",
+        "bg-color",
+        "hint-bg-color",
+        "hint-fg-color",
+        "select-fg-color",
+        "select-bg-color",
+        "multi-fg-color",
+        "multi-bg-color",
+    ]
+    .contains(&name)
+}
+
+fn is_true_tmux_value(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "enabled" | "true" | "yes" | "on"
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ThumbsPane {
     id: String,
 }
@@ -502,53 +591,7 @@ impl<'a> Swapper<'a> {
             .execute(params)
             .map_err(|error| self.command_error("start_picker", error))?
             .stdout;
-        let lines: Vec<&str> = options.split('\n').collect();
-
-        let pattern = Regex::new(r#"^@thumbs-([\w\-0-9]+)\s+(.+)$"#).unwrap();
-
-        let args = lines
-            .iter()
-            .flat_map(|line| {
-                if let Some(captures) = pattern.captures(line) {
-                    let name = captures.get(1).unwrap().as_str();
-                    let value = tmux_option_value(captures.get(2).unwrap().as_str());
-
-                    let boolean_params = ["reverse", "unique", "contrast"];
-
-                    if boolean_params.contains(&name) {
-                        return vec![format!("--{}", name)];
-                    }
-
-                    let string_params = [
-                        "alphabet",
-                        "position",
-                        "fg-color",
-                        "bg-color",
-                        "hint-bg-color",
-                        "hint-fg-color",
-                        "select-fg-color",
-                        "select-bg-color",
-                        "multi-fg-color",
-                        "multi-bg-color",
-                    ];
-
-                    if string_params.contains(&name) {
-                        return vec![format!("--{}", name), shell_quote(value)];
-                    }
-
-                    if name.starts_with("regexp") {
-                        return vec![
-                            "--regexp".to_string(),
-                            shell_quote(&value.replace("\\\\", "\\")),
-                        ];
-                    }
-
-                    vec![]
-                } else {
-                    vec![]
-                }
-            })
-            .collect::<Vec<String>>();
+        let args = PickerArgs::from_tmux_options(&options).render_shell_args();
 
         let active_pane_id = shell_quote(active_pane.id.as_str());
 
@@ -1096,6 +1139,44 @@ mod tests {
     }
 
     #[test]
+    fn picker_args_parse_true_boolean_values() {
+        let args = PickerArgs::from_tmux_options(
+            "@thumbs-reverse enabled\n@thumbs-unique 1\n@thumbs-contrast true\n",
+        )
+        .render_shell_args();
+
+        assert_eq!(args, ["--reverse", "--unique", "--contrast"]);
+    }
+
+    #[test]
+    fn picker_args_ignore_false_and_empty_boolean_values() {
+        let args = PickerArgs::from_tmux_options(
+            "@thumbs-reverse 0\n@thumbs-unique disabled\n@thumbs-contrast \"\"\n",
+        )
+        .render_shell_args();
+
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn picker_args_parse_quoted_strings_and_regex_backslashes() {
+        let args = PickerArgs::from_tmux_options(
+            "@thumbs-fg-color \"bright green\"\n@thumbs-regexp-1 \"foo\\\\d+'bar\"\n",
+        )
+        .render_shell_args();
+
+        assert_eq!(
+            args,
+            [
+                "--fg-color",
+                "'bright green'",
+                "--regexp",
+                "'foo\\d+'\\''bar'",
+            ]
+        );
+    }
+
+    #[test]
     fn malformed_active_pane_output_returns_phase_error() {
         let last_command_outputs = vec!["%97\t0\t24\n".to_string()];
         let mut executor = TestShell::new(last_command_outputs);
@@ -1569,7 +1650,7 @@ mod tests {
     }
 
     #[test]
-    fn boolean_tmux_options_are_enabled_when_present() {
+    fn boolean_tmux_options_only_forward_true_values() {
         let last_command_outputs = vec![
             "".to_string(),
             "%100".to_string(),
@@ -1595,8 +1676,8 @@ mod tests {
             .expect("thumbs window should be created");
         let pane_command = new_window_command.last().unwrap();
 
-        assert!(pane_command.contains("--reverse"));
-        assert!(pane_command.contains("--unique"));
+        assert!(!pane_command.contains("--reverse"));
+        assert!(!pane_command.contains("--unique"));
         assert!(pane_command.contains("--contrast"));
     }
 }

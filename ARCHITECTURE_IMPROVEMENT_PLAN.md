@@ -361,22 +361,22 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Create a `ThumbsCliArgs` or `PickerArgs` struct that stores values before shell rendering.
-- [ ] Parse `@thumbs-alphabet`, `@thumbs-position`, color options, and `@thumbs-regexp-*` into that struct.
-- [ ] Parse booleans with documented accepted true values. Preserve existing documented values such as `enabled` and `1` where applicable.
-- [ ] Ignore unset or empty values consistently.
-- [ ] Render picker args only after typed parsing and shell quoting.
-- [ ] Add tests for `enabled`, `1`, `0`, `disabled`, empty, quoted strings, and regex backslashes.
+- [x] Create a `ThumbsCliArgs` or `PickerArgs` struct that stores values before shell rendering.
+- [x] Parse `@thumbs-alphabet`, `@thumbs-position`, color options, and `@thumbs-regexp-*` into that struct.
+- [x] Parse booleans with documented accepted true values. Preserve existing documented values such as `enabled` and `1` where applicable.
+- [x] Ignore unset or empty values consistently.
+- [x] Render picker args only after typed parsing and shell quoting.
+- [x] Add tests for `enabled`, `1`, `0`, `disabled`, empty, quoted strings, and regex backslashes.
 
 **Acceptance criteria:**
 
-- [ ] Tmux option parsing is unit-testable without constructing a pane command.
-- [ ] Boolean behavior is documented by tests.
-- [ ] Rendering picker args is separate from parsing tmux output.
+- [x] Tmux option parsing is unit-testable without constructing a pane command.
+- [x] Boolean behavior is documented by tests.
+- [x] Rendering picker args is separate from parsing tmux output.
 
 **Verification:**
 
-- [ ] Run `cargo test --bin tmux-thumbs --verbose`.
+- [x] Run `cargo test --bin tmux-thumbs --verbose`.
 
 **Dependencies:** Task 1.7.
 
