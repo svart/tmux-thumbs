@@ -1,4 +1,5 @@
 use crate::tmux_options::{shell_quote, PickerArgs};
+use crate::tmux_script::PaneScript;
 use crate::tmux_selection::SelectionSet;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
@@ -482,58 +483,19 @@ impl<'a> Swapper<'a> {
             })?
             .render_shell_args();
 
-        let active_pane_id = shell_quote(active_pane.id.as_str());
-
-        let scroll_params = if let Some(scroll_position) = active_pane.scroll_position {
-            format!(
-                " -S {} -E {}",
-                -scroll_position,
-                active_pane.height - scroll_position - 1
-            )
-        } else {
-            "".to_string()
-        };
-
-        // Capture before swapping panes; once a split pane is moved into the hidden
-        // full-window slot, tmux can resize/reflow it and the old height can truncate matches.
-        let capture_command = format!(
-            "tmux capture-pane -J -t {active_pane_id} -p{scroll_params} | tail -n {height}",
-            active_pane_id = active_pane_id,
-            scroll_params = scroll_params,
-            height = active_pane.height
-        );
-
-        let picker_path = shell_quote(&format!("{}/target/release/thumbs", self.dir));
-        let picker_command = format!(
-            "printf '%s\\n' \"$capture\" | {} -f {} -t {} {}",
-            picker_path,
-            shell_quote("%U:%H"),
-            shell_quote(self.result_path.as_str()),
-            args.join(" ")
-        );
-        let finished_signal_command = format!(
-            "tmux wait-for -S {}",
-            shell_quote(self.signals.finished.as_str())
-        );
-        let mut pane_script = vec![
-            format!("trap {} EXIT", shell_quote(&finished_signal_command)),
-            format!("capture=\"$({})\"", capture_command),
-            format!(
-                "tmux wait-for -S {}",
-                shell_quote(self.signals.captured.as_str())
-            ),
-            format!("tmux wait-for {}", shell_quote(self.signals.start.as_str())),
-            picker_command,
-            format!("tmux swap-pane -t {}", active_pane_id),
-        ];
-
-        if active_pane.zoomed {
-            pane_script.push(format!("tmux resize-pane -t {} -Z", active_pane_id));
+        let pane_command = PaneScript {
+            dir: &self.dir,
+            result_path: &self.result_path,
+            picker_args: &args,
+            active_pane_id: &active_pane.id,
+            active_pane_height: active_pane.height,
+            active_pane_scroll_position: active_pane.scroll_position,
+            active_pane_zoomed: active_pane.zoomed,
+            finished_signal: &self.signals.finished,
+            captured_signal: &self.signals.captured,
+            start_signal: &self.signals.start,
         }
-
-        pane_script.push(finished_signal_command);
-
-        let pane_command = pane_script.join("; ");
+        .render();
 
         let thumbs_command = [
             "tmux",
