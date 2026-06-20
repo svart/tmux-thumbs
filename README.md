@@ -52,7 +52,7 @@ the plugin!
 
 ## Installation checking out the source code
 
-`tmux-thumbs` is written in Rust. You will need `rustc` version 1.35.0 or higher. The
+`tmux-thumbs` is written in Rust. Use a current stable Rust toolchain. The
 recommended way to install Rust is from the official [download page](https://rustup.rs/).
 
 Clone the repo:
@@ -190,7 +190,7 @@ set -g @thumbs-regexp-5 Vlan\\d+ # alternative method of defining regexp
 
 ### @thumbs-command
 
-`default: 'tmux set-buffer -- {} && tmux display-message \"Copied {}\"'`
+`default: tmux set-buffer -- "{}" && tmux display-message "Copied {}"`
 
 Choose which command execute when you press a hint. `tmux-thumbs` will replace `{}` with the picked hint.
 
@@ -202,7 +202,7 @@ set -g @thumbs-command 'echo -n {} | pbcopy'
 
 ### @thumbs-upcase-command
 
-`default: 'tmux set-buffer -- {} && tmux paste-buffer && tmux display-message \"Copied {}\"'`
+`default: tmux set-buffer -- "{}" && tmux paste-buffer && tmux display-message "Copied {}"`
 
 Choose which command execute when you press a upcase hint. `tmux-thumbs` will replace `{}` with the picked hint.
 
@@ -214,9 +214,9 @@ set -g @thumbs-upcase-command 'echo -n {} | pbcopy'
 
 ### @thumbs-multi-command
 
-`default: 'tmux set-buffer -- {} && tmux paste-buffer && tmux send-keys ' ' && tmux display-message \"Copied multiple items!\"'`
+`default: tmux set-buffer -- "{}" && tmux paste-buffer && tmux display-message "Multi copied {}"`
 
-Choose which command execute when you select multiple items. `tmux-thumbs` will replace `{}` with the picked hint for each one.
+Choose which command execute when you select multiple items. `tmux-thumbs` joins selected text into one space-separated string and replaces `{}` with that string.
 
 For example:
 
