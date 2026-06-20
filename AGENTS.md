@@ -69,7 +69,7 @@
 - Keep command execution in `src/tmux.rs` safer than literal interpolation: `{}` is intentionally replaced with `${THUMB}` and run through `bash -c 'THUMB="$1"; eval "$2"'` to preserve old config syntax while reducing injection risk.
 - Do not remove the tmux capture/start wait ordering in `src/tmux.rs`; it prevents pane resize/reflow from truncating matches before `thumbs` starts.
 - Be cautious with the OSC52 sleep in `src/tmux.rs`; it works around tmux redraw timing after the alternate screen exits.
-- `src/view.rs` uses termion raw mode and the alternate screen. Unit tests cover helper behavior only; rendering and pane-flow changes need manual tmux smoke testing when feasible.
+- `src/view.rs` uses termion raw mode and the alternate screen. Unit tests cover rendering helpers and captured render output; keyboard handling and pane-flow changes still need manual tmux smoke testing when feasible.
 
 ## Verification Guide
 

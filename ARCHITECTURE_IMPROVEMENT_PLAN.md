@@ -732,21 +732,21 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Update README only for user-visible behavior, options, or help output changes.
-- [ ] Update `AGENTS.md` for new module layout, result handoff, error semantics, and verification guidance.
-- [ ] If a new library module layout exists, update the source map.
-- [ ] If wrapper behavior changes, update install/runtime notes.
+- [x] Update README only for user-visible behavior, options, or help output changes.
+- [x] Update `AGENTS.md` for new module layout, result handoff, error semantics, and verification guidance.
+- [x] If a new library module layout exists, update the source map.
+- [x] If wrapper behavior changes, update install/runtime notes.
 
 **Acceptance criteria:**
 
-- [ ] Docs do not mention removed implementation details as current behavior.
-- [ ] Agent instructions remain enough for a new agent to work safely.
-- [ ] README and source defaults do not contradict each other for touched options.
+- [x] Docs do not mention removed implementation details as current behavior.
+- [x] Agent instructions remain enough for a new agent to work safely.
+- [x] README and source defaults do not contradict each other for touched options.
 
 **Verification:**
 
-- [ ] Read `AGENTS.md` and touched README sections after edits.
-- [ ] For docs-only changes, tests are optional unless code changed in the same task.
+- [x] Read `AGENTS.md` and touched README sections after edits.
+- [x] For docs-only changes, tests are optional unless code changed in the same task.
 
 **Dependencies:** Complete after the relevant implementation tasks.
 

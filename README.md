@@ -336,7 +336,7 @@ set -g @thumbs-contrast 1
 
 `default: 0`
 
-If this is set to `1`, `tmux-thumbs` will print a OSC52 copy escape sequence when you select a match, in addition to running the pick command. This sequence, in terminals that support it (e.g. iTerm), allows the content to be copied into the system clipboard in addition to the tmux copy buffer.
+If this is set to `1`, `tmux-thumbs` will print an OSC52 copy escape sequence when you select a match, in addition to running the pick command. This sequence, in terminals that support it (e.g. iTerm), allows the content to be copied into the system clipboard in addition to the tmux copy buffer.
 
 For example:
 
@@ -433,36 +433,49 @@ cargo install thumbs
 And those are all available options:
 
 ```
-thumbs 0.7.1
 A lightning fast version copy/pasting like vimium/vimperator
 
-USAGE:
-    thumbs [FLAGS] [OPTIONS]
+Usage: thumbs [OPTIONS]
 
-FLAGS:
-    -c, --contrast    Put square brackets around hint for visibility
-    -h, --help        Prints help information
-    -m, --multi       Enable multi-selection
-    -r, --reverse     Reverse the order for assigned hints
-    -u, --unique      Don't show duplicated hints for the same match
-    -V, --version     Prints version information
-
-OPTIONS:
-    -a, --alphabet <alphabet>                          Sets the alphabet [default: qwerty]
-        --bg-color <background_color>                  Sets the background color for matches [default: black]
-        --fg-color <foreground_color>                  Sets the foregroud color for matches [default: green]
-    -f, --format <format>
-            Specifies the out format for the picked hint. (%U: Upcase, %H: Hint) [default: %H]
-
-        --hint-bg-color <hint_background_color>        Sets the background color for hints [default: black]
-        --hint-fg-color <hint_foreground_color>        Sets the foregroud color for hints [default: yellow]
-    -p, --position <position>                          Hint position [default: left]
-    -x, --regexp <regexp>...                           Use this regexp as extra pattern to match
-        --select-bg-color <select_background_color>    Sets the background color for selection [default: black]
-        --select-fg-color <select_foreground_color>    Sets the foreground color for selection [default: blue]
-        --multi-bg-color <multi_background_color>      Sets the background color for a multi selected item [default: black]
-        --multi-fg-color <multi_foreground_color>      Sets the foreground color for a multi selected item [default: cyan]
-    -t, --target <target>                              Stores the hint in the specified path
+Options:
+  -a, --alphabet <alphabet>
+          Sets the alphabet [default: qwerty]
+  -f, --format <format>
+          Specifies the out format for the picked hint. (%U: Upcase, %H: Hint) [default: %H]
+      --fg-color <foreground_color>
+          Sets the foreground color for matches [default: green]
+      --bg-color <background_color>
+          Sets the background color for matches [default: black]
+      --hint-fg-color <hint_foreground_color>
+          Sets the foreground color for hints [default: yellow]
+      --hint-bg-color <hint_background_color>
+          Sets the background color for hints [default: black]
+      --multi-fg-color <multi_foreground_color>
+          Sets the foreground color for a multi selected item [default: yellow]
+      --multi-bg-color <multi_background_color>
+          Sets the background color for a multi selected item [default: black]
+      --select-fg-color <select_foreground_color>
+          Sets the foreground color for selection [default: blue]
+      --select-bg-color <select_background_color>
+          Sets the background color for selection [default: black]
+  -m, --multi
+          Enable multi-selection
+  -r, --reverse
+          Reverse the order for assigned hints
+  -u, --unique
+          Don't show duplicated hints for the same match
+  -p, --position <position>
+          Hint position [default: left]
+  -x, --regexp <regexp>
+          Use this regexp as extra pattern to match
+  -c, --contrast
+          Put square brackets around hint for visibility
+  -t, --target <target>
+          Stores the hint in the specified path
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 
