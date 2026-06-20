@@ -2,7 +2,7 @@
 set -Eeu -o pipefail
 
 # Removing the binary to make this script idempotent
-rm -rf target/release/thumbs
+rm -rf target/release/thumbs target/release/tmux-thumbs
 
 clear
 

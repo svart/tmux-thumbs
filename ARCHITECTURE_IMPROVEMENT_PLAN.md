@@ -390,22 +390,22 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Check that both `thumbs` and `tmux-thumbs` exist before invoking the orchestrator.
-- [ ] Check both `--version` outputs against `Cargo.toml` version.
-- [ ] Preserve the interactive installer/update behavior for missing or stale binaries.
-- [ ] After Task 1.3 gives the orchestrator clean cancellation semantics, remove or narrow `|| true` so real failures are visible.
-- [ ] Add shell-level tests if a shell test harness exists; otherwise document manual verification.
+- [x] Check that both `thumbs` and `tmux-thumbs` exist before invoking the orchestrator.
+- [x] Check both `--version` outputs against `Cargo.toml` version.
+- [x] Preserve the interactive installer/update behavior for missing or stale binaries.
+- [x] After Task 1.3 gives the orchestrator clean cancellation semantics, remove or narrow `|| true` so real failures are visible.
+- [x] Add shell-level tests if a shell test harness exists; otherwise document manual verification.
 
 **Acceptance criteria:**
 
-- [ ] Missing `tmux-thumbs` triggers the installer path instead of a hidden failed command.
-- [ ] Stale `tmux-thumbs` triggers the update path.
-- [ ] User cancellation does not produce noisy tmux errors.
-- [ ] Real orchestrator failures are not swallowed silently.
+- [x] Missing `tmux-thumbs` triggers the installer path instead of a hidden failed command.
+- [x] Stale `tmux-thumbs` triggers the update path.
+- [x] User cancellation does not produce noisy tmux errors.
+- [x] Real orchestrator failures are not swallowed silently.
 
 **Verification:**
 
-- [ ] Run `cargo build --release` before invoking wrapper manually.
+- [x] Run `cargo build --release` before invoking wrapper manually.
 - [ ] In tmux, source `tmux-thumbs.tmux` and run `thumbs-pick`.
 - [ ] Temporarily move one release binary aside in a controlled test and verify installer/update path.
 

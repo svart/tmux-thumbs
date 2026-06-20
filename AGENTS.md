@@ -48,8 +48,8 @@
 ## Runtime Flow
 
 1. `tmux-thumbs.tmux` registers `thumbs-pick=run-shell -b .../tmux-thumbs.sh` and binds `@thumbs-key` or `space`.
-2. `tmux-thumbs.sh` checks `target/release/thumbs` against `Cargo.toml` version, then invokes `target/release/tmux-thumbs`.
-3. If `thumbs` is missing or stale, `tmux-thumbs.sh` opens the interactive `tmux-thumbs-install.sh`; avoid this path in automated verification.
+2. `tmux-thumbs.sh` checks `target/release/thumbs` and `target/release/tmux-thumbs` against `Cargo.toml` version, then invokes `target/release/tmux-thumbs`.
+3. If either release binary is missing or stale, `tmux-thumbs.sh` opens the interactive `tmux-thumbs-install.sh`; avoid this path in automated verification.
 4. `tmux-thumbs.sh` passes only `--dir`, `--command`, `--upcase-command`, `--multi-command`, and `--osc52` into `tmux-thumbs`.
 5. `src/swapper.rs` reads `tmux show -g`, translates UI options such as `@thumbs-alphabet`, colors, `@thumbs-reverse`, `@thumbs-unique`, `@thumbs-contrast`, and `@thumbs-regexp-*`, then forwards them to `thumbs`.
 6. `src/swapper.rs` captures the active pane before pane swapping, starts `thumbs` in a hidden window, synchronizes with `tmux wait-for`, swaps panes, waits for selection, reads and deletes that run's temp result file, and runs the configured command.

@@ -9,13 +9,32 @@ THUMBS_BINARY="${RELEASE_DIR}/thumbs"
 TMUX_THUMBS_BINARY="${RELEASE_DIR}/tmux-thumbs"
 VERSION=$(grep 'version =' "${CURRENT_DIR}/Cargo.toml" | grep -o "\".*\"" | sed 's/"//g')
 
-if [ ! -f "$THUMBS_BINARY" ]; then
+function install-binaries() {
   tmux split-window "cd ${CURRENT_DIR} && bash ./tmux-thumbs-install.sh"
   exit
-elif [[ $(${THUMBS_BINARY} --version) != "thumbs ${VERSION}"  ]]; then
+}
+
+function update-binaries() {
   tmux split-window "cd ${CURRENT_DIR} && bash ./tmux-thumbs-install.sh update"
   exit
-fi
+}
+
+function validate-binary() {
+  local binary expected actual
+  binary="${1}"; expected="${2}"
+
+  if [ ! -x "${binary}" ]; then
+    install-binaries
+  fi
+
+  actual="$(${binary} --version 2> /dev/null || true)"
+  if [[ "${actual}" != "${expected}" ]]; then
+    update-binaries
+  fi
+}
+
+validate-binary "${THUMBS_BINARY}" "thumbs ${VERSION}"
+validate-binary "${TMUX_THUMBS_BINARY}" "tmux-thumbs ${VERSION}"
 
 function get-opt-value() {
   tmux show -vg "@thumbs-${1}" 2> /dev/null
@@ -50,4 +69,4 @@ add-param upcase-command string
 add-param multi-command  string
 add-param osc52          boolean
 
-"${TMUX_THUMBS_BINARY}" "${PARAMS[@]}" || true
+"${TMUX_THUMBS_BINARY}" "${PARAMS[@]}"
