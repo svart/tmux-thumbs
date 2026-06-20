@@ -34,8 +34,8 @@ const PATTERNS: [(&str, &str); 15] = [
 
 #[derive(Clone)]
 pub struct Match<'a> {
-    pub x: i32,
-    pub y: i32,
+    pub x: usize,
+    pub y: usize,
     pub pattern: &'a str,
     pub text: &'a str,
     pub hint: Option<String>,
@@ -100,7 +100,7 @@ impl<'a> State<'a> {
 
         for (index, line) in self.lines.iter().enumerate() {
             let mut chunk: &str = line;
-            let mut offset: i32 = 0;
+            let mut offset: usize = 0;
 
             loop {
                 // For this line we search which patterns match, all of them.
@@ -137,8 +137,8 @@ impl<'a> State<'a> {
                         if *name != "bash" {
                             for (subtext, substart) in captures.iter() {
                                 matches.push(Match {
-                                    x: offset + matching.start() as i32 + *substart as i32,
-                                    y: index as i32,
+                                    x: offset + matching.start() + *substart,
+                                    y: index,
                                     pattern: name,
                                     text: subtext,
                                     hint: None,
@@ -147,7 +147,7 @@ impl<'a> State<'a> {
                         }
 
                         chunk = chunk.get(matching.end()..).expect("Unknown chunk");
-                        offset += matching.end() as i32;
+                        offset += matching.end();
                     } else {
                         panic!("No matching?");
                     }
@@ -223,6 +223,16 @@ mod tests {
         assert_eq!(results.len(), 3);
         assert_eq!(results.first().unwrap().hint.clone().unwrap(), "a");
         assert_eq!(results.last().unwrap().hint.clone().unwrap(), "a");
+    }
+
+    #[test]
+    fn match_coordinates_are_byte_indexes() {
+        let lines = split("λ 127.0.0.1");
+        let custom = [].to_vec();
+        let results = State::new(&lines, "abcd", &custom).matches(false, false);
+
+        assert_eq!(results.first().unwrap().x, "λ ".len());
+        assert_eq!(results.first().unwrap().y, 0);
     }
 
     #[test]

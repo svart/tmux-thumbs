@@ -105,7 +105,7 @@ impl<'a> View<'a> {
     ) -> View<'a> {
         let matches = state.matches(options.reverse, options.unique);
         let skip = if options.reverse {
-            matches.len() - 1
+            matches.len().saturating_sub(1)
         } else {
             0
         };
@@ -136,7 +136,7 @@ impl<'a> View<'a> {
     }
 
     pub fn next(&mut self) {
-        if self.skip < self.matches.len() - 1 {
+        if self.skip < self.matches.len().saturating_sub(1) {
             self.skip += 1;
         }
     }
@@ -158,7 +158,7 @@ impl<'a> View<'a> {
             if !clean.is_empty() {
                 print!(
                     "{goto}{text}",
-                    goto = cursor::Goto(1, index as u16 + 1),
+                    goto = cursor::Goto(1, terminal_position(index)),
                     text = line
                 );
             }
@@ -184,16 +184,15 @@ impl<'a> View<'a> {
                 &self.background_color
             };
 
-            // Find long utf sequences and extract it from mat.x
-            let line = &self.state.lines[mat.y as usize];
-            let prefix = &line[0..mat.x as usize];
-            let extra = prefix.width_cjk() - prefix.chars().count();
-            let offset = (mat.x as u16) - (extra as u16);
+            // Match coordinates are byte indexes; rendering needs display columns.
+            let line = &self.state.lines[mat.y];
+            let match_column = display_column(line, mat.x);
+            let match_row = terminal_position(mat.y);
             let text = self.make_hint_text(mat.text);
 
             print!(
                 "{goto}{background}{foregroud}{text}{resetf}{resetb}",
-                goto = cursor::Goto(offset + 1, mat.y as u16 + 1),
+                goto = cursor::Goto(terminal_position(match_column), match_row),
                 foregroud = color::Fg(&**selected_color),
                 background = color::Bg(&**selected_background_color),
                 resetf = color::Fg(color::Reset),
@@ -202,21 +201,15 @@ impl<'a> View<'a> {
             );
 
             if let Some(ref hint) = mat.hint {
-                let extra_position = match self.position {
-                    HintPosition::Left => 0,
-                    HintPosition::Right => text.width_cjk() as i16 - hint.len() as i16,
-                    HintPosition::OffLeft => {
-                        -(hint.len() as i16) - if self.contrast { 2 } else { 0 }
-                    }
-                    HintPosition::OffRight => text.width_cjk() as i16,
-                };
+                let extra_position =
+                    hint_offset(self.position, text.width_cjk(), hint.len(), self.contrast);
 
                 let text = self.make_hint_text(hint.as_str());
-                let final_position = std::cmp::max(offset as i16 + extra_position, 0);
+                let final_position = hint_terminal_position(match_column, extra_position);
 
                 print!(
                     "{goto}{background}{foregroud}{text}{resetf}{resetb}",
-                    goto = cursor::Goto(final_position as u16 + 1, mat.y as u16 + 1),
+                    goto = cursor::Goto(final_position, match_row),
                     foregroud = color::Fg(&*self.hint_foreground_color),
                     background = color::Bg(&*self.hint_background_color),
                     resetf = color::Fg(color::Reset),
@@ -227,7 +220,7 @@ impl<'a> View<'a> {
                 if hint.starts_with(typed_hint) {
                     print!(
                         "{goto}{background}{foregroud}{text}{resetf}{resetb}",
-                        goto = cursor::Goto(final_position as u16 + 1, mat.y as u16 + 1),
+                        goto = cursor::Goto(final_position, match_row),
                         foregroud = color::Fg(&*self.multi_foreground_color),
                         background = color::Bg(&*self.multi_background_color),
                         resetf = color::Fg(color::Reset),
@@ -390,12 +383,59 @@ impl<'a> View<'a> {
     }
 }
 
+fn terminal_position(zero_based: usize) -> u16 {
+    zero_based.saturating_add(1).min(u16::MAX as usize) as u16
+}
+
+fn display_column(line: &str, byte_index: usize) -> usize {
+    line.get(..byte_index)
+        .expect("match coordinate must be on a character boundary")
+        .width_cjk()
+}
+
+fn hint_offset(
+    position: HintPosition,
+    match_text_width: usize,
+    hint_width: usize,
+    contrast: bool,
+) -> isize {
+    match position {
+        HintPosition::Left => 0,
+        HintPosition::Right => match_text_width as isize - hint_width as isize,
+        HintPosition::OffLeft => -(hint_width as isize) - if contrast { 2 } else { 0 },
+        HintPosition::OffRight => match_text_width as isize,
+    }
+}
+
+fn hint_terminal_position(match_column: usize, offset: isize) -> u16 {
+    let column = match_column as isize + offset;
+
+    if column <= 0 {
+        return 1;
+    }
+
+    terminal_position(column as usize)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn split(output: &str) -> Vec<&str> {
         output.split('\n').collect::<Vec<&str>>()
+    }
+
+    fn default_colors() -> ViewColors {
+        ViewColors {
+            select_foreground_color: colors::get_color("default"),
+            select_background_color: colors::get_color("default"),
+            multi_foreground_color: colors::get_color("default"),
+            multi_background_color: colors::get_color("default"),
+            foreground_color: colors::get_color("default"),
+            background_color: colors::get_color("default"),
+            hint_background_color: colors::get_color("default"),
+            hint_foreground_color: colors::get_color("default"),
+        }
     }
 
     #[test]
@@ -449,5 +489,42 @@ mod tests {
         let error = HintPosition::parse("center").unwrap_err();
 
         assert_eq!(error.to_string(), "Unknown hint position: center");
+    }
+
+    #[test]
+    fn reverse_empty_matches_does_not_panic() {
+        let lines = split("no hints here");
+        let custom = [].to_vec();
+        let mut state = state::State::new(&lines, "abcd", &custom);
+        let view = View::new(
+            &mut state,
+            ViewOptions {
+                multi: false,
+                reverse: true,
+                unique: false,
+                contrast: false,
+                position: HintPosition::Left,
+            },
+            default_colors(),
+        );
+
+        assert_eq!(view.skip, 0);
+        assert!(view.matches.is_empty());
+    }
+
+    #[test]
+    fn off_left_hint_position_saturates_at_first_terminal_column() {
+        let offset = hint_offset(HintPosition::OffLeft, 1, 2, false);
+        assert_eq!(hint_terminal_position(0, offset), 1);
+
+        let contrast_offset = hint_offset(HintPosition::OffLeft, 1, 2, true);
+        assert_eq!(hint_terminal_position(0, contrast_offset), 1);
+    }
+
+    #[test]
+    fn display_column_uses_unicode_width() {
+        let line = "你λ 127.0.0.1";
+
+        assert_eq!(display_column(line, "你λ ".len()), 4);
     }
 }

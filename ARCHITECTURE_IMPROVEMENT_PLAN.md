@@ -530,22 +530,22 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Change match coordinates to `usize` where they represent indexes into line text.
-- [ ] Convert to terminal coordinates at the rendering boundary with checked or saturating conversion.
-- [ ] Fix reverse mode empty-match behavior with `checked_sub`, `saturating_sub`, or explicit empty handling.
-- [ ] Fix `off_left` using signed arithmetic from the beginning or `saturating_sub`.
-- [ ] Add tests for empty input with `--reverse`, `off_left` near column zero, and wide-character prefixes.
+- [x] Change match coordinates to `usize` where they represent indexes into line text.
+- [x] Convert to terminal coordinates at the rendering boundary with checked or saturating conversion.
+- [x] Fix reverse mode empty-match behavior with `checked_sub`, `saturating_sub`, or explicit empty handling.
+- [x] Fix `off_left` using signed arithmetic from the beginning or `saturating_sub`.
+- [x] Add tests for empty input with `--reverse`, `off_left` near column zero, and wide-character prefixes.
 
 **Acceptance criteria:**
 
-- [ ] Empty reverse mode cannot panic.
-- [ ] `off_left` cannot underflow.
-- [ ] Coordinate conversions are localized and readable.
+- [x] Empty reverse mode cannot panic.
+- [x] `off_left` cannot underflow.
+- [x] Coordinate conversions are localized and readable.
 
 **Verification:**
 
-- [ ] Run `cargo test --bin thumbs view::tests::hint_text -- --exact` and new focused view tests.
-- [ ] Run `cargo test --verbose`.
+- [x] Run `cargo test --lib view::tests::hint_text -- --exact` and new focused view tests.
+- [x] Run `cargo test --verbose`.
 
 **Dependencies:** Task 2.3.
 
