@@ -10,7 +10,7 @@ const BUILTIN_PATTERN_DEFS: [(&str, &str); 15] = [
     ("markdown_url", r"\[[^]]*\]\(([^)]+)\)"),
     (
         "url",
-        r"(?P<match>(https?://|git@|git://|ssh://|ftp://|file:///)[^ ]+)",
+        r#"(?P<match>(https?://|git@|git://|ssh://|ftp://|file:///)[^[:space:]]*[^[:space:]"'.,;:!?\]\)}>])"#,
     ),
     (
         "diff_summary",
@@ -19,7 +19,10 @@ const BUILTIN_PATTERN_DEFS: [(&str, &str); 15] = [
     ("diff_a", r"--- a/([^ ]+)"),
     ("diff_b", r"\+\+\+ b/([^ ]+)"),
     ("docker", r"sha256:([0-9a-f]{64})"),
-    ("path", r"(?P<match>([.\w\-@$~\[\]]+)?(/[.\w\-@$\[\]]+)+)"),
+    (
+        "path",
+        r"(?P<match>([.\w\-@$~\[\]]+)?(/[.\w\-@$\[\]]*[\w\-@$\[\]])+)",
+    ),
     ("color", r"#[0-9a-fA-F]{6}"),
     (
         "uid",
@@ -413,6 +416,17 @@ mod tests {
     }
 
     #[test]
+    fn match_paths_excludes_trailing_sentence_punctuation() {
+        let lines = split("See /Users/me/docs/report.md. Then inspect /tmp/output.log,");
+        let custom = [].to_vec();
+        let results = State::new(&lines, "abcd", &custom).matches(false, false);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results.first().unwrap().text, "/Users/me/docs/report.md");
+        assert_eq!(results.get(1).unwrap().text, "/tmp/output.log");
+    }
+
+    #[test]
     fn match_routes() {
         let lines =
             split("Lorem /app/routes/$routeId/$objectId, lorem\n Lorem /app/routes/$sectionId");
@@ -541,6 +555,22 @@ mod tests {
         assert_eq!(results.get(2).unwrap().pattern, "url");
         assert_eq!(results.get(3).unwrap().text, "ssh://github.io");
         assert_eq!(results.get(3).unwrap().pattern, "url");
+    }
+
+    #[test]
+    fn match_urls_excludes_trailing_delimiters() {
+        let lines = split(
+            "open (https://example.com/path), then \"https://example.org/search?q=one&sort=two\".",
+        );
+        let custom = [].to_vec();
+        let results = State::new(&lines, "abcd", &custom).matches(false, false);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results.first().unwrap().text, "https://example.com/path");
+        assert_eq!(
+            results.get(1).unwrap().text,
+            "https://example.org/search?q=one&sort=two"
+        );
     }
 
     #[test]

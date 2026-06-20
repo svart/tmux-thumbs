@@ -1,7 +1,8 @@
 use super::*;
 use std::char;
 use std::fmt;
-use std::io::{self, Read, Write, stdout};
+use std::fs::OpenOptions;
+use std::io::{self, Read, Write};
 use termion::async_stdin;
 use termion::event::Key;
 use termion::input::TermRead;
@@ -315,7 +316,8 @@ impl<'a> View<'a> {
 
     pub fn present(&mut self) -> io::Result<Vec<(String, bool)>> {
         let mut stdin = async_stdin();
-        let mut stdout = stdout().into_raw_mode()?.into_alternate_screen()?;
+        let terminal = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
+        let mut stdout = terminal.into_raw_mode()?.into_alternate_screen()?;
 
         let hints = match self.listen(&mut stdin, &mut stdout)? {
             CaptureEvent::Exit => vec![],

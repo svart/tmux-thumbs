@@ -503,6 +503,7 @@ I was curious to know if this was possible to be written in [Rust](https://www.r
 
 - [X] Support multi selection
 - [X] Decouple `tmux-thumbs` from `tmux`
+- [ ] Support multiline matching and quoted-string regular expressions
 - [ ] Code [Kitty](https://github.com/kovidgoyal/kitty) plugin, now that `thumbs` can run standalone
 
 ## Troubleshooting
