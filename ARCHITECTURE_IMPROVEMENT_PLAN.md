@@ -674,22 +674,22 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Replace per-call `HashMap` construction with a simple iterator lookup over `ALPHABETS` or a lazily initialized map.
-- [ ] Return `Result<Alphabet, Error>` for unknown alphabet or validate before lookup.
-- [ ] Return `Result<Box<dyn color::Color>, Error>` or parse colors into a custom enum that renders later.
-- [ ] Keep named colors and `#RRGGBB` behavior unchanged.
-- [ ] Update tests currently using `#[should_panic]` to assert errors instead.
+- [x] Replace per-call `HashMap` construction with a simple iterator lookup over `ALPHABETS` or a lazily initialized map.
+- [x] Return `Result<Alphabet, Error>` for unknown alphabet or validate before lookup.
+- [x] Return `Result<Box<dyn color::Color>, Error>` or parse colors into a custom enum that renders later.
+- [x] Keep named colors and `#RRGGBB` behavior unchanged.
+- [x] Update tests currently using `#[should_panic]` to assert errors instead.
 
 **Acceptance criteria:**
 
-- [ ] Unknown alphabet/color does not panic in production flows.
-- [ ] Existing valid color/alphabet tests still pass.
-- [ ] Utility modules are shorter or clearer than before.
+- [x] Unknown alphabet/color does not panic in production flows.
+- [x] Existing valid color/alphabet tests still pass.
+- [x] Utility modules are shorter or clearer than before.
 
 **Verification:**
 
-- [ ] Run `cargo test --bin thumbs alphabets::tests` and `cargo test --bin thumbs colors::tests`.
-- [ ] Run `cargo test --verbose`.
+- [x] Run `cargo test --lib alphabets::tests` and `cargo test --lib colors::tests`.
+- [x] Run `cargo test --verbose`.
 
 **Dependencies:** Task 2.3.
 

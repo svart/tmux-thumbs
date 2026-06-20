@@ -451,15 +451,19 @@ mod tests {
 
     fn default_colors() -> ViewColors {
         ViewColors {
-            select_foreground_color: colors::get_color("default"),
-            select_background_color: colors::get_color("default"),
-            multi_foreground_color: colors::get_color("default"),
-            multi_background_color: colors::get_color("default"),
-            foreground_color: colors::get_color("default"),
-            background_color: colors::get_color("default"),
-            hint_background_color: colors::get_color("default"),
-            hint_foreground_color: colors::get_color("default"),
+            select_foreground_color: test_color("default"),
+            select_background_color: test_color("default"),
+            multi_foreground_color: test_color("default"),
+            multi_background_color: test_color("default"),
+            foreground_color: test_color("default"),
+            background_color: test_color("default"),
+            hint_background_color: test_color("default"),
+            hint_foreground_color: test_color("default"),
         }
+    }
+
+    fn test_color(name: &str) -> Box<dyn color::Color> {
+        colors::get_color(name).unwrap()
     }
 
     fn default_options(position: HintPosition, contrast: bool) -> ViewOptions {
@@ -484,14 +488,14 @@ mod tests {
             contrast: false,
             position: HintPosition::Left,
             matches: vec![],
-            select_foreground_color: colors::get_color("default"),
-            select_background_color: colors::get_color("default"),
-            multi_foreground_color: colors::get_color("default"),
-            multi_background_color: colors::get_color("default"),
-            foreground_color: colors::get_color("default"),
-            background_color: colors::get_color("default"),
-            hint_background_color: colors::get_color("default"),
-            hint_foreground_color: colors::get_color("default"),
+            select_foreground_color: test_color("default"),
+            select_background_color: test_color("default"),
+            multi_foreground_color: test_color("default"),
+            multi_background_color: test_color("default"),
+            foreground_color: test_color("default"),
+            background_color: test_color("default"),
+            hint_background_color: test_color("default"),
+            hint_foreground_color: test_color("default"),
             chosen: vec![],
         };
 
@@ -610,7 +614,7 @@ mod tests {
             &mut state,
             default_options(HintPosition::Left, false),
             ViewColors {
-                select_foreground_color: colors::get_color("red"),
+                select_foreground_color: test_color("red"),
                 ..default_colors()
             },
         );

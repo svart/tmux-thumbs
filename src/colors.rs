@@ -76,10 +76,8 @@ impl fmt::Display for ColorParseError {
 
 impl std::error::Error for ColorParseError {}
 
-pub fn get_color(color_name: &str) -> Box<dyn color::Color> {
-    ColorSpec::parse(color_name)
-        .unwrap_or_else(|error| panic!("{}", error))
-        .to_color()
+pub fn get_color(color_name: &str) -> Result<Box<dyn color::Color>, ColorParseError> {
+    ColorSpec::parse(color_name).map(|spec| spec.to_color())
 }
 
 #[cfg(test)]
@@ -88,7 +86,7 @@ mod tests {
 
     #[test]
     fn match_color() {
-        let text1 = format!("{}foo", color::Fg(&*get_color("green")));
+        let text1 = format!("{}foo", color::Fg(&*get_color("green").unwrap()));
         let text2 = format!("{}foo", color::Fg(color::Green));
 
         assert_eq!(text1, text2);
@@ -96,7 +94,7 @@ mod tests {
 
     #[test]
     fn parse_rgb() {
-        let text1 = format!("{}foo", color::Fg(&*get_color("#1b1cbf")));
+        let text1 = format!("{}foo", color::Fg(&*get_color("#1b1cbf").unwrap()));
         let text2 = format!("{}foo", color::Fg(color::Rgb(27, 28, 191)));
 
         assert_eq!(text1, text2);
@@ -119,14 +117,20 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn parse_invalid_rgb() {
-        let _ = get_color("#1b1cbj");
+        let Err(error) = get_color("#1b1cbj") else {
+            panic!("expected color parse error");
+        };
+
+        assert_eq!(error.to_string(), "Unknown color: #1b1cbj");
     }
 
     #[test]
-    #[should_panic]
     fn no_match_color() {
-        let _ = get_color("wat");
+        let Err(error) = get_color("wat") else {
+            panic!("expected color parse error");
+        };
+
+        assert_eq!(error.to_string(), "Unknown color: wat");
     }
 }

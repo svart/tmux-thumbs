@@ -111,20 +111,24 @@ impl<'a> PartialEq for Match<'a> {
 
 pub struct State<'a> {
     lines: &'a [&'a str],
-    alphabet: &'a str,
+    alphabet: super::alphabets::Alphabet<'static>,
     custom_patterns: Vec<Pattern>,
 }
 
 impl<'a> State<'a> {
-    pub fn new(lines: &'a [&'a str], alphabet: &'a str, regexp: &[&str]) -> State<'a> {
+    pub fn new(lines: &'a [&'a str], alphabet: &str, regexp: &[&str]) -> State<'a> {
         State::try_new(lines, alphabet, regexp).unwrap_or_else(|error| panic!("{}", error))
     }
 
     pub fn try_new(
         lines: &'a [&'a str],
-        alphabet: &'a str,
+        alphabet: &str,
         regexp: &[&str],
     ) -> Result<State<'a>, StateError> {
+        let alphabet = super::alphabets::get_alphabet(alphabet).map_err(|error| StateError {
+            message: error.to_string(),
+        })?;
+
         Ok(State {
             lines,
             alphabet,
@@ -163,8 +167,7 @@ impl<'a> State<'a> {
     }
 
     fn assign_hints(&self, matches: &mut Vec<Match<'a>>, reverse: bool, unique: bool) {
-        let alphabet = super::alphabets::get_alphabet(self.alphabet);
-        let mut hints = alphabet.hints(matches.len());
+        let mut hints = self.alphabet.hints(matches.len());
 
         // This looks wrong but we do a pop after
         if !reverse {
@@ -309,6 +312,15 @@ mod tests {
         let error = State::try_new(&lines, "abcd", &custom).err().unwrap();
 
         assert!(error.to_string().contains("Invalid custom regexp"));
+    }
+
+    #[test]
+    fn try_new_rejects_invalid_alphabet() {
+        let lines = split("anything");
+        let custom = [].to_vec();
+        let error = State::try_new(&lines, "wat", &custom).err().unwrap();
+
+        assert_eq!(error.to_string(), "Unknown alphabet: wat");
     }
 
     #[test]

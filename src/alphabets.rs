@@ -25,6 +25,7 @@ const ALPHABETS: [(&str, &str); 22] = [
     ("colemak-right-hand", "neioluymjhk"),
 ];
 
+#[derive(Debug)]
 pub struct Alphabet<'a> {
     letters: &'a str,
 }
@@ -81,25 +82,16 @@ impl<'a> Alphabet<'a> {
     }
 }
 
-pub fn get_alphabet(alphabet_name: &str) -> Alphabet<'_> {
-    let letters = alphabet_letters(alphabet_name).unwrap_or_else(|| {
-        panic!(
-            "{}",
-            AlphabetParseError {
-                name: alphabet_name.to_string()
-            }
-        )
-    });
-
-    Alphabet::new(letters)
-}
-
-pub fn validate_alphabet(alphabet_name: &str) -> Result<(), AlphabetParseError> {
+pub fn get_alphabet(alphabet_name: &str) -> Result<Alphabet<'static>, AlphabetParseError> {
     alphabet_letters(alphabet_name)
-        .map(|_| ())
+        .map(Alphabet::new)
         .ok_or_else(|| AlphabetParseError {
             name: alphabet_name.to_string(),
         })
+}
+
+pub fn validate_alphabet(alphabet_name: &str) -> Result<(), AlphabetParseError> {
+    get_alphabet(alphabet_name).map(|_| ())
 }
 
 fn alphabet_letters(alphabet_name: &str) -> Option<&'static str> {
@@ -146,8 +138,22 @@ mod tests {
     }
 
     #[test]
+    fn get_known_alphabet() {
+        let alphabet = get_alphabet("abcd").unwrap();
+
+        assert_eq!(alphabet.hints(3), ["a", "b", "c"]);
+    }
+
+    #[test]
     fn reject_unknown_alphabet() {
         let error = validate_alphabet("wat").unwrap_err();
+
+        assert_eq!(error.to_string(), "Unknown alphabet: wat");
+    }
+
+    #[test]
+    fn reject_unknown_alphabet_lookup() {
+        let error = get_alphabet("wat").unwrap_err();
 
         assert_eq!(error.to_string(), "Unknown alphabet: wat");
     }
