@@ -547,6 +547,12 @@ mod tests {
         fn last_executed(&self) -> Option<Vec<String>> {
             self.executed.clone()
         }
+
+        fn new_window_command(&self) -> Option<&Vec<String>> {
+            self.executions
+                .iter()
+                .find(|command| command.get(1) == Some(&"new-window".to_string()))
+        }
     }
 
     impl Executor for TestShell {
@@ -726,5 +732,139 @@ mod tests {
         ];
 
         assert_eq!(executor.last_executed().unwrap(), expectation);
+    }
+
+    #[test]
+    fn no_selection_does_not_execute_command() {
+        let last_command_outputs = vec![];
+        let mut executor = TestShell::new(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "".to_string(),
+            "echo {}".to_string(),
+            "open {}".to_string(),
+            "multi {}".to_string(),
+            false,
+        );
+
+        swapper.content = Some("".to_string());
+        swapper.execute_command();
+
+        assert_eq!(executor.last_executed(), None);
+    }
+
+    #[test]
+    fn malformed_selection_does_not_execute_command() {
+        let last_command_outputs = vec![];
+        let mut executor = TestShell::new(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "".to_string(),
+            "echo {}".to_string(),
+            "open {}".to_string(),
+            "multi {}".to_string(),
+            false,
+        );
+
+        swapper.content = Some("not-a-selection".to_string());
+        swapper.execute_command();
+
+        assert_eq!(executor.last_executed(), None);
+    }
+
+    #[test]
+    fn picker_target_matches_retrieval_path() {
+        let last_command_outputs = vec![
+            "".to_string(),
+            "".to_string(),
+            "%100".to_string(),
+            "".to_string(),
+            "%98:0:8:0:0:active\n".to_string(),
+        ];
+        let mut executor = TestShell::new(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "/plugin".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            false,
+        );
+
+        swapper.capture_active_pane();
+        swapper.execute_thumbs();
+        swapper.retrieve_content();
+
+        let new_window_command = executor
+            .new_window_command()
+            .expect("thumbs window should be created");
+        let pane_command = new_window_command.last().unwrap();
+
+        assert!(pane_command.contains(" -t /tmp/thumbs-last "));
+        assert_eq!(
+            executor.last_executed().unwrap(),
+            ["cat", "/tmp/thumbs-last"]
+        );
+    }
+
+    #[test]
+    fn forwards_tmux_options_with_spaces() {
+        let last_command_outputs = vec![
+            "".to_string(),
+            "%100".to_string(),
+            "@thumbs-fg-color \"bright green\"\n".to_string(),
+            "%98:0:8:0:0:active\n".to_string(),
+        ];
+        let mut executor = TestShell::new(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "/plugin".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            false,
+        );
+
+        swapper.capture_active_pane();
+        swapper.execute_thumbs();
+
+        let new_window_command = executor
+            .new_window_command()
+            .expect("thumbs window should be created");
+        let pane_command = new_window_command.last().unwrap();
+
+        assert!(pane_command.contains("--fg-color 'bright green'"));
+    }
+
+    #[test]
+    fn boolean_tmux_options_are_enabled_when_present() {
+        let last_command_outputs = vec![
+            "".to_string(),
+            "%100".to_string(),
+            "@thumbs-reverse \"0\"\n@thumbs-unique disabled\n@thumbs-contrast enabled\n"
+                .to_string(),
+            "%98:0:8:0:0:active\n".to_string(),
+        ];
+        let mut executor = TestShell::new(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "/plugin".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            false,
+        );
+
+        swapper.capture_active_pane();
+        swapper.execute_thumbs();
+
+        let new_window_command = executor
+            .new_window_command()
+            .expect("thumbs window should be created");
+        let pane_command = new_window_command.last().unwrap();
+
+        assert!(pane_command.contains("--reverse"));
+        assert!(pane_command.contains("--unique"));
+        assert!(pane_command.contains("--contrast"));
     }
 }
