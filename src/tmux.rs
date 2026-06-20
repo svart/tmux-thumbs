@@ -1,4 +1,6 @@
-use crate::tmux_options::{shell_quote, PickerArgs};
+#[cfg(test)]
+use crate::tmux_options::shell_quote;
+use crate::tmux_options::PickerArgs;
 use crate::tmux_script::PaneScript;
 use crate::tmux_selection::SelectionSet;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
