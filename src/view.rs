@@ -156,11 +156,13 @@ impl<'a> View<'a> {
             let clean = line.trim_end_matches(|c: char| c.is_whitespace());
 
             if !clean.is_empty() {
-                print!(
+                write!(
+                    stdout,
                     "{goto}{text}",
                     goto = cursor::Goto(1, terminal_position(index)),
                     text = line
-                );
+                )
+                .unwrap();
             }
         }
 
@@ -190,7 +192,8 @@ impl<'a> View<'a> {
             let match_row = terminal_position(mat.y);
             let text = self.make_hint_text(mat.text);
 
-            print!(
+            write!(
+                stdout,
                 "{goto}{background}{foregroud}{text}{resetf}{resetb}",
                 goto = cursor::Goto(terminal_position(match_column), match_row),
                 foregroud = color::Fg(&**selected_color),
@@ -198,27 +201,35 @@ impl<'a> View<'a> {
                 resetf = color::Fg(color::Reset),
                 resetb = color::Bg(color::Reset),
                 text = &text
-            );
+            )
+            .unwrap();
 
             if let Some(ref hint) = mat.hint {
-                let extra_position =
-                    hint_offset(self.position, text.width_cjk(), hint.len(), self.contrast);
+                let match_text_width = text.width_cjk();
+                let hint_text = self.make_hint_text(hint.as_str());
+                let final_position = hint_column(
+                    self.position,
+                    match_column,
+                    match_text_width,
+                    hint.len(),
+                    self.contrast,
+                );
 
-                let text = self.make_hint_text(hint.as_str());
-                let final_position = hint_terminal_position(match_column, extra_position);
-
-                print!(
+                write!(
+                    stdout,
                     "{goto}{background}{foregroud}{text}{resetf}{resetb}",
                     goto = cursor::Goto(final_position, match_row),
                     foregroud = color::Fg(&*self.hint_foreground_color),
                     background = color::Bg(&*self.hint_background_color),
                     resetf = color::Fg(color::Reset),
                     resetb = color::Bg(color::Reset),
-                    text = &text
-                );
+                    text = &hint_text
+                )
+                .unwrap();
 
                 if hint.starts_with(typed_hint) {
-                    print!(
+                    write!(
+                        stdout,
                         "{goto}{background}{foregroud}{text}{resetf}{resetb}",
                         goto = cursor::Goto(final_position, match_row),
                         foregroud = color::Fg(&*self.multi_foreground_color),
@@ -226,7 +237,8 @@ impl<'a> View<'a> {
                         resetf = color::Fg(color::Reset),
                         resetb = color::Bg(color::Reset),
                         text = &typed_hint
-                    );
+                    )
+                    .unwrap();
                 }
             }
         }
@@ -417,6 +429,18 @@ fn hint_terminal_position(match_column: usize, offset: isize) -> u16 {
     terminal_position(column as usize)
 }
 
+fn hint_column(
+    position: HintPosition,
+    match_column: usize,
+    match_text_width: usize,
+    hint_width: usize,
+    contrast: bool,
+) -> u16 {
+    let offset = hint_offset(position, match_text_width, hint_width, contrast);
+
+    hint_terminal_position(match_column, offset)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,6 +459,16 @@ mod tests {
             background_color: colors::get_color("default"),
             hint_background_color: colors::get_color("default"),
             hint_foreground_color: colors::get_color("default"),
+        }
+    }
+
+    fn default_options(position: HintPosition, contrast: bool) -> ViewOptions {
+        ViewOptions {
+            multi: false,
+            reverse: false,
+            unique: false,
+            contrast,
+            position,
         }
     }
 
@@ -519,6 +553,73 @@ mod tests {
 
         let contrast_offset = hint_offset(HintPosition::OffLeft, 1, 2, true);
         assert_eq!(hint_terminal_position(0, contrast_offset), 1);
+    }
+
+    #[test]
+    fn hint_column_places_all_positions() {
+        assert_eq!(hint_column(HintPosition::Left, 10, 4, 2, false), 11);
+        assert_eq!(hint_column(HintPosition::Right, 10, 4, 2, false), 13);
+        assert_eq!(hint_column(HintPosition::OffLeft, 10, 4, 2, false), 9);
+        assert_eq!(hint_column(HintPosition::OffRight, 10, 4, 2, false), 15);
+        assert_eq!(hint_column(HintPosition::OffLeft, 10, 4, 2, true), 7);
+    }
+
+    #[test]
+    fn render_writes_visible_output_to_provided_writer() {
+        let lines = split("127.0.0.1");
+        let custom = [].to_vec();
+        let mut state = state::State::new(&lines, "abcd", &custom);
+        let view = View::new(
+            &mut state,
+            default_options(HintPosition::Left, false),
+            default_colors(),
+        );
+        let mut output = Vec::new();
+
+        view.render(&mut output, "");
+
+        let rendered = String::from_utf8(output).unwrap();
+        assert!(rendered.contains("127.0.0.1"));
+        assert!(rendered.contains("a"));
+    }
+
+    #[test]
+    fn render_overlays_typed_hint_prefix() {
+        let lines = split("127.0.0.1");
+        let custom = [].to_vec();
+        let mut state = state::State::new(&lines, "abcd", &custom);
+        let view = View::new(
+            &mut state,
+            default_options(HintPosition::Left, false),
+            default_colors(),
+        );
+        let mut output = Vec::new();
+
+        view.render(&mut output, "a");
+
+        let rendered = String::from_utf8(output).unwrap();
+        assert_eq!(rendered.matches('a').count(), 2);
+    }
+
+    #[test]
+    fn render_uses_selected_match_color() {
+        let lines = split("127.0.0.1");
+        let custom = [].to_vec();
+        let mut state = state::State::new(&lines, "abcd", &custom);
+        let view = View::new(
+            &mut state,
+            default_options(HintPosition::Left, false),
+            ViewColors {
+                select_foreground_color: colors::get_color("red"),
+                ..default_colors()
+            },
+        );
+        let mut output = Vec::new();
+
+        view.render(&mut output, "");
+
+        let rendered = String::from_utf8(output).unwrap();
+        assert!(rendered.contains(&format!("{}", color::Fg(color::Red))));
     }
 
     #[test]

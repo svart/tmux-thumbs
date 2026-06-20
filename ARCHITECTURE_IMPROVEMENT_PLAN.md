@@ -645,22 +645,22 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Replace `print!` calls inside `render` with `write!(stdout, ...)`.
-- [ ] Keep raw mode and alternate screen setup in `present`, not in pure rendering helpers.
-- [ ] Extract hint placement calculation into a pure helper.
-- [ ] Add tests for `left`, `right`, `off_left`, `off_right`, contrast mode, selected match color choice if practical, and typed hint overlay.
-- [ ] Consider an input/event abstraction only after rendering output is testable.
+- [x] Replace `print!` calls inside `render` with `write!(stdout, ...)`.
+- [x] Keep raw mode and alternate screen setup in `present`, not in pure rendering helpers.
+- [x] Extract hint placement calculation into a pure helper.
+- [x] Add tests for `left`, `right`, `off_left`, `off_right`, contrast mode, selected match color choice if practical, and typed hint overlay.
+- [x] Consider an input/event abstraction only after rendering output is testable.
 
 **Acceptance criteria:**
 
-- [ ] Rendering tests can capture output with an in-memory writer.
-- [ ] No rendering helper writes to global stdout.
-- [ ] Terminal setup remains isolated to the outer presentation layer.
+- [x] Rendering tests can capture output with an in-memory writer.
+- [x] No rendering helper writes to global stdout.
+- [x] Terminal setup remains isolated to the outer presentation layer.
 
 **Verification:**
 
-- [ ] Run `cargo test --bin thumbs view::tests -- --nocapture` if useful.
-- [ ] Run `cargo test --verbose`.
+- [x] Run `cargo test --lib view::tests -- --nocapture`.
+- [x] Run `cargo test --verbose`.
 
 **Dependencies:** Task 2.4.
 
