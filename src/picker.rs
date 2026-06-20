@@ -5,16 +5,6 @@ use std::fmt;
 use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
 
-#[allow(dead_code)]
-fn dbg(msg: &str) {
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .open("/tmp/thumbs.log")
-        .expect("Unable to open log file");
-
-    writeln!(&mut file, "{}", msg).expect("Unable to write log file");
-}
-
 type PickerResult<T> = Result<T, PickerError>;
 
 #[derive(Debug)]
@@ -144,7 +134,7 @@ fn app() -> Command {
         )
         .arg(
             Arg::new("foreground_color")
-                .help("Sets the foregroud color for matches")
+                .help("Sets the foreground color for matches")
                 .long("fg-color")
                 .default_value("green"),
         )
@@ -156,7 +146,7 @@ fn app() -> Command {
         )
         .arg(
             Arg::new("hint_foreground_color")
-                .help("Sets the foregroud color for hints")
+                .help("Sets the foreground color for hints")
                 .long("hint-fg-color")
                 .default_value("yellow"),
         )

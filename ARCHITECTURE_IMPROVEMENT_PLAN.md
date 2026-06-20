@@ -703,22 +703,22 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Remove unused `dbg` helpers or put them behind a deliberate debug feature.
-- [ ] Remove the empty `send_osc52` method or implement it as part of a real OSC52 abstraction.
-- [ ] Update the OSC52 redraw comment to mention current termion alternate-screen behavior.
-- [ ] Fix typos in comments and clap help only when touching nearby code.
-- [ ] Avoid broad cosmetic churn unrelated to a functional task.
+- [x] Remove unused `dbg` helpers or put them behind a deliberate debug feature.
+- [x] Remove the empty `send_osc52` method or implement it as part of a real OSC52 abstraction.
+- [x] Update the OSC52 redraw comment to mention current termion alternate-screen behavior.
+- [x] Fix typos in comments and clap help only when touching nearby code.
+- [x] Avoid broad cosmetic churn unrelated to a functional task.
 
 **Acceptance criteria:**
 
-- [ ] No empty public methods remain.
-- [ ] Comments describe current code, not old dependencies.
-- [ ] Cleanup does not change behavior.
+- [x] No empty public methods remain.
+- [x] Comments describe current code, not old dependencies.
+- [x] Cleanup does not change behavior.
 
 **Verification:**
 
-- [ ] Run `cargo fmt --all -- --check`.
-- [ ] Run `cargo test --verbose`.
+- [x] Run `cargo fmt --all -- --check`.
+- [x] Run `cargo test --verbose`.
 
 **Dependencies:** Can be done opportunistically after touched areas stabilize.
 

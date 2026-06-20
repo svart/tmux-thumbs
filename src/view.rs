@@ -194,9 +194,9 @@ impl<'a> View<'a> {
 
             write!(
                 stdout,
-                "{goto}{background}{foregroud}{text}{resetf}{resetb}",
+                "{goto}{background}{foreground}{text}{resetf}{resetb}",
                 goto = cursor::Goto(terminal_position(match_column), match_row),
-                foregroud = color::Fg(&**selected_color),
+                foreground = color::Fg(&**selected_color),
                 background = color::Bg(&**selected_background_color),
                 resetf = color::Fg(color::Reset),
                 resetb = color::Bg(color::Reset),
@@ -217,9 +217,9 @@ impl<'a> View<'a> {
 
                 write!(
                     stdout,
-                    "{goto}{background}{foregroud}{text}{resetf}{resetb}",
+                    "{goto}{background}{foreground}{text}{resetf}{resetb}",
                     goto = cursor::Goto(final_position, match_row),
-                    foregroud = color::Fg(&*self.hint_foreground_color),
+                    foreground = color::Fg(&*self.hint_foreground_color),
                     background = color::Bg(&*self.hint_background_color),
                     resetf = color::Fg(color::Reset),
                     resetb = color::Bg(color::Reset),
@@ -230,9 +230,9 @@ impl<'a> View<'a> {
                 if hint.starts_with(typed_hint) {
                     write!(
                         stdout,
-                        "{goto}{background}{foregroud}{text}{resetf}{resetb}",
+                        "{goto}{background}{foreground}{text}{resetf}{resetb}",
                         goto = cursor::Goto(final_position, match_row),
-                        foregroud = color::Fg(&*self.multi_foreground_color),
+                        foreground = color::Fg(&*self.multi_foreground_color),
                         background = color::Bg(&*self.multi_background_color),
                         resetf = color::Fg(color::Reset),
                         resetb = color::Bg(color::Reset),
