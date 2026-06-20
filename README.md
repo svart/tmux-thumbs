@@ -537,6 +537,9 @@ This project started as a side project to learn Rust, so I'm sure that is full
 of mistakes and areas to be improve. If you think you can tweak the code to
 make it better, I'll really appreciate a pull request. ;)
 
+For a maintainer-focused overview of the runtime flow and module boundaries,
+see [docs/architecture.md](docs/architecture.md).
+
 # License
 
 [MIT](https://github.com/fcsonline/tmux-thumbs/blob/master/LICENSE)
