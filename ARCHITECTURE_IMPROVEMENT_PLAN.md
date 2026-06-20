@@ -419,16 +419,16 @@ Swapper::run() -> Result<RunOutcome>
 
 **Checklist:**
 
-- [ ] `cargo fmt --all -- --check` passes.
-- [ ] `cargo test --bin tmux-thumbs --verbose` passes.
-- [ ] `cargo test --verbose` passes.
-- [ ] `cargo build --release` passes.
+- [x] `cargo fmt --all -- --check` passes.
+- [x] `cargo test --bin tmux-thumbs --verbose` passes.
+- [x] `cargo test --verbose` passes.
+- [x] `cargo build --release` passes.
 - [ ] Manual tmux smoke test passes normal pick, uppercase pick, multi-select, custom regexp, and cancellation.
-- [ ] Review generated pane script for quoting, wait signaling, and cleanup.
-- [ ] Verify one simulated failure reports the failing phase, command context, and run identifiers.
-- [ ] Verify normal cancellation stays quiet unless debug mode is enabled.
-- [ ] Confirm no code path references fixed `/tmp/thumbs-last`.
-- [ ] Confirm no public CLI flags or tmux option names changed.
+- [x] Review generated pane script for quoting, wait signaling, and cleanup.
+- [x] Verify one simulated failure reports the failing phase, command context, and run identifiers.
+- [x] Verify normal cancellation stays quiet unless debug mode is enabled.
+- [x] Confirm no code path references fixed `/tmp/thumbs-last`.
+- [x] Confirm no public CLI flags or tmux option names changed.
 
 ---
 
