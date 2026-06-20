@@ -442,22 +442,22 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Add `src/lib.rs` exporting `alphabets`, `colors`, `state`, and `view`.
-- [ ] Move tmux orchestration support into a module such as `src/swapper.rs` or `src/tmux.rs`, then point the binary to a thin `src/bin/tmux-thumbs.rs` or keep the current binary path with a small wrapper.
-- [ ] Keep binary names unchanged in `Cargo.toml`.
-- [ ] Keep existing inline tests or move them beside the modules they test.
-- [ ] Update imports to use the library crate path where appropriate.
+- [x] Add `src/lib.rs` exporting `alphabets`, `colors`, `state`, and `view`.
+- [x] Move tmux orchestration support into a module such as `src/swapper.rs` or `src/tmux.rs`, then point the binary to a thin `src/bin/tmux-thumbs.rs` or keep the current binary path with a small wrapper.
+- [x] Keep binary names unchanged in `Cargo.toml`.
+- [x] Keep existing inline tests or move them beside the modules they test.
+- [x] Update imports to use the library crate path where appropriate.
 
 **Acceptance criteria:**
 
-- [ ] Both binaries still build with the same names.
-- [ ] `main()` functions only parse CLI, call library functions, and map errors to exit codes.
-- [ ] Unit tests can target library modules directly.
+- [x] Both binaries still build with the same names.
+- [x] `main()` functions only parse CLI, call library functions, and map errors to exit codes.
+- [x] Unit tests can target library modules directly.
 
 **Verification:**
 
-- [ ] Run `cargo build --verbose`.
-- [ ] Run `cargo test --verbose`.
+- [x] Run `cargo build --verbose`.
+- [x] Run `cargo test --verbose`.
 
 **Dependencies:** Part 1 recommended, but this can start after Task 1.5 if needed.
 
