@@ -35,38 +35,136 @@ impl CommandOutput {
 struct CommandError {
     command: Vec<String>,
     status: Option<i32>,
+    stdout: String,
     stderr: String,
 }
 
-impl fmt::Display for CommandError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl CommandError {
+    fn command_line(&self, include_sensitive: bool) -> String {
+        if include_sensitive {
+            return self.command.join(" ");
+        }
+
+        let mut command = self.command.clone();
+
+        if command.first().map(String::as_str) == Some("bash")
+            && command.get(1).map(String::as_str) == Some("-c")
+            && command.get(4).is_some()
+        {
+            command[4] = "<selected text>".to_string();
+        }
+
+        command.join(" ")
+    }
+
+    fn format_with_command(&self, include_sensitive: bool) -> String {
         let status = self
             .status
             .map(|status| status.to_string())
             .unwrap_or_else(|| "unknown".to_string());
+        let mut message = format!(
+            "command `{}` failed with status {}",
+            self.command_line(include_sensitive),
+            status
+        );
 
-        if self.stderr.is_empty() {
-            write!(
-                f,
-                "command `{}` failed with status {}",
-                self.command.join(" "),
-                status
-            )
-        } else {
-            write!(
-                f,
-                "command `{}` failed with status {}: {}",
-                self.command.join(" "),
-                status,
-                self.stderr
-            )
+        if !self.stdout.is_empty() {
+            message.push_str(&format!(": stdout: {}", self.stdout));
         }
+
+        if !self.stderr.is_empty() {
+            message.push_str(&format!(": stderr: {}", self.stderr));
+        }
+
+        message
+    }
+}
+
+impl fmt::Display for CommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.format_with_command(true))
     }
 }
 
 impl std::error::Error for CommandError {}
 
 type CommandResult<T> = Result<T, CommandError>;
+type OrchestrationResult<T> = Result<T, OrchestrationError>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RunContext {
+    run_id: String,
+    result_path: String,
+    signal: String,
+    capture_signal: String,
+    start_signal: String,
+    active_pane_id: Option<String>,
+    thumbs_pane_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OrchestrationError {
+    Startup(String),
+    Command {
+        phase: &'static str,
+        context: Box<RunContext>,
+        source: Box<CommandError>,
+    },
+}
+
+impl OrchestrationError {
+    fn command(
+        phase: &'static str,
+        context: RunContext,
+        source: CommandError,
+    ) -> OrchestrationError {
+        OrchestrationError::Command {
+            phase,
+            context: Box::new(context),
+            source: Box::new(source),
+        }
+    }
+
+    fn debug_message(&self) -> String {
+        match self {
+            OrchestrationError::Startup(message) => message.clone(),
+            OrchestrationError::Command {
+                phase,
+                context,
+                source,
+            } => format!(
+                "phase `{}` failed for run `{}`: {}\nresult_path: {}\nsignals: finished={}, captured={}, start={}\nactive_pane_id: {}\nthumbs_pane_id: {}",
+                phase,
+                context.run_id,
+                source.format_with_command(true),
+                context.result_path,
+                context.signal,
+                context.capture_signal,
+                context.start_signal,
+                context.active_pane_id.as_deref().unwrap_or("<unknown>"),
+                context.thumbs_pane_id.as_deref().unwrap_or("<unknown>")
+            ),
+        }
+    }
+}
+
+impl fmt::Display for OrchestrationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OrchestrationError::Startup(message) => write!(f, "{}", message),
+            OrchestrationError::Command { phase, source, .. } => {
+                write!(
+                    f,
+                    "phase `{}` failed: {}",
+                    phase,
+                    source.format_with_command(false)
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for OrchestrationError {}
 
 trait Executor {
     fn execute(&mut self, args: Vec<String>) -> CommandResult<CommandOutput>;
@@ -86,6 +184,7 @@ impl Executor for RealShell {
             return Err(CommandError {
                 command: args,
                 status: None,
+                stdout: String::new(),
                 stderr: "empty command".to_string(),
             });
         }
@@ -96,6 +195,7 @@ impl Executor for RealShell {
             .map_err(|error| CommandError {
                 command: args.clone(),
                 status: None,
+                stdout: String::new(),
                 stderr: error.to_string(),
             })?;
 
@@ -116,6 +216,7 @@ impl Executor for RealShell {
             Err(CommandError {
                 command: args,
                 status: output.status,
+                stdout: output.stdout,
                 stderr: output.stderr,
             })
         }
@@ -155,6 +256,7 @@ pub struct Swapper<'a> {
     signal: String,
     capture_signal: String,
     start_signal: String,
+    run_id: String,
     result_path: String,
 }
 
@@ -201,11 +303,28 @@ impl<'a> Swapper<'a> {
             signal,
             capture_signal,
             start_signal,
+            run_id: signal_id,
             result_path,
         }
     }
 
-    fn capture_active_pane(&mut self) -> CommandResult<()> {
+    fn run_context(&self) -> RunContext {
+        RunContext {
+            run_id: self.run_id.clone(),
+            result_path: self.result_path.clone(),
+            signal: self.signal.clone(),
+            capture_signal: self.capture_signal.clone(),
+            start_signal: self.start_signal.clone(),
+            active_pane_id: self.active_pane_id.clone(),
+            thumbs_pane_id: self.thumbs_pane_id.clone(),
+        }
+    }
+
+    fn command_error(&self, phase: &'static str, error: CommandError) -> OrchestrationError {
+        OrchestrationError::command(phase, self.run_context(), error)
+    }
+
+    fn capture_active_pane(&mut self) -> OrchestrationResult<()> {
         let active_command = [
       "tmux",
       "list-panes",
@@ -215,7 +334,8 @@ impl<'a> Swapper<'a> {
 
         let output = self
             .executor
-            .execute(active_command.iter().map(|arg| arg.to_string()).collect())?
+            .execute(active_command.iter().map(|arg| arg.to_string()).collect())
+            .map_err(|error| self.command_error("capture_active_pane", error))?
             .stdout;
 
         let lines: Vec<&str> = output.split('\n').collect();
@@ -261,10 +381,14 @@ impl<'a> Swapper<'a> {
         Ok(())
     }
 
-    fn execute_thumbs(&mut self) -> CommandResult<()> {
+    fn execute_thumbs(&mut self) -> OrchestrationResult<()> {
         let options_command = ["tmux", "show", "-g"];
         let params: Vec<String> = options_command.iter().map(|arg| arg.to_string()).collect();
-        let options = self.executor.execute(params)?.stdout;
+        let options = self
+            .executor
+            .execute(params)
+            .map_err(|error| self.command_error("start_picker", error))?
+            .stdout;
         let lines: Vec<&str> = options.split('\n').collect();
 
         let pattern = Regex::new(r#"^@thumbs-([\w\-0-9]+)\s+"?([^"]+)"?$"#).unwrap();
@@ -370,13 +494,18 @@ impl<'a> Swapper<'a> {
 
         let params: Vec<String> = thumbs_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.thumbs_pane_id = Some(self.executor.execute(params)?.stdout);
+        self.thumbs_pane_id = Some(
+            self.executor
+                .execute(params)
+                .map_err(|error| self.command_error("start_picker", error))?
+                .stdout,
+        );
         self.wait_capture()?;
 
         Ok(())
     }
 
-    fn swap_panes(&mut self) -> CommandResult<()> {
+    fn swap_panes(&mut self) -> OrchestrationResult<()> {
         let active_pane_id = self.active_pane_id.as_mut().unwrap().clone();
         let thumbs_pane_id = self.thumbs_pane_id.as_mut().unwrap().clone();
 
@@ -396,12 +525,14 @@ impl<'a> Swapper<'a> {
             .map(|arg| arg.to_string())
             .collect();
 
-        self.executor.execute(params)?;
+        self.executor
+            .execute(params)
+            .map_err(|error| self.command_error("swap_panes", error))?;
 
         Ok(())
     }
 
-    fn resize_pane(&mut self) -> CommandResult<()> {
+    fn resize_pane(&mut self) -> OrchestrationResult<()> {
         let active_pane_zoomed = *self.active_pane_zoomed.as_mut().unwrap();
 
         if !active_pane_zoomed {
@@ -418,63 +549,73 @@ impl<'a> Swapper<'a> {
             .map(|arg| arg.to_string())
             .collect();
 
-        self.executor.execute(params)?;
+        self.executor
+            .execute(params)
+            .map_err(|error| self.command_error("resize_pane", error))?;
 
         Ok(())
     }
 
-    fn wait_capture(&mut self) -> CommandResult<()> {
+    fn wait_capture(&mut self) -> OrchestrationResult<()> {
         let wait_command = ["tmux", "wait-for", self.capture_signal.as_str()];
         let params = wait_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.executor.execute(params)?;
+        self.executor
+            .execute(params)
+            .map_err(|error| self.command_error("wait_capture", error))?;
 
         Ok(())
     }
 
-    fn start_thumbs(&mut self) -> CommandResult<()> {
+    fn start_thumbs(&mut self) -> OrchestrationResult<()> {
         let start_command = ["tmux", "wait-for", "-S", self.start_signal.as_str()];
         let params = start_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.executor.execute(params)?;
+        self.executor
+            .execute(params)
+            .map_err(|error| self.command_error("start_thumbs", error))?;
 
         Ok(())
     }
 
-    fn wait_thumbs(&mut self) -> CommandResult<()> {
+    fn wait_thumbs(&mut self) -> OrchestrationResult<()> {
         let wait_command = ["tmux", "wait-for", self.signal.as_str()];
         let params = wait_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.executor.execute(params)?;
+        self.executor
+            .execute(params)
+            .map_err(|error| self.command_error("wait_thumbs", error))?;
 
         Ok(())
     }
 
-    fn retrieve_content(&mut self) -> CommandResult<()> {
+    fn retrieve_content(&mut self) -> OrchestrationResult<()> {
         let retrieve_command = ["cat", self.result_path.as_str()];
         let params = retrieve_command.iter().map(|arg| arg.to_string()).collect();
 
         match self.executor.execute(params) {
             Ok(output) => self.content = Some(output.stdout),
             Err(error) if missing_result_file_error(&error) => self.content = None,
-            Err(error) => return Err(error),
+            Err(error) => return Err(self.command_error("read_selection", error)),
         }
 
         Ok(())
     }
 
-    fn destroy_content(&mut self) -> CommandResult<()> {
+    fn destroy_content(&mut self) -> OrchestrationResult<()> {
         let retrieve_command = ["rm", "-f", self.result_path.as_str()];
         let params = retrieve_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.executor.execute(params)?;
+        self.executor
+            .execute(params)
+            .map_err(|error| self.command_error("cleanup_result", error))?;
 
         Ok(())
     }
 
     pub fn send_osc52(&mut self) {}
 
-    fn execute_command(&mut self) -> CommandResult<SelectionOutcome> {
+    fn execute_command(&mut self) -> OrchestrationResult<SelectionOutcome> {
         let Some(content) = self.content.clone() else {
             return Ok(SelectionOutcome::Cancelled);
         };
@@ -571,7 +712,11 @@ impl<'a> Swapper<'a> {
         Ok(SelectionOutcome::Cancelled)
     }
 
-    fn execute_final_command(&mut self, text: &str, execute_command: &str) -> CommandResult<()> {
+    fn execute_final_command(
+        &mut self,
+        text: &str,
+        execute_command: &str,
+    ) -> OrchestrationResult<()> {
         let final_command = str::replace(execute_command, "{}", "${THUMB}");
         let retrieve_command = [
             "bash",
@@ -584,7 +729,9 @@ impl<'a> Swapper<'a> {
 
         let params = retrieve_command.iter().map(|arg| arg.to_string()).collect();
 
-        self.executor.execute(params)?;
+        self.executor
+            .execute(params)
+            .map_err(|error| self.command_error("execute_command", error))?;
 
         Ok(())
     }
@@ -637,7 +784,7 @@ fn app_args() -> clap::ArgMatches {
     .get_matches()
 }
 
-fn run() -> CommandResult<SelectionOutcome> {
+fn run() -> OrchestrationResult<SelectionOutcome> {
     let args = app_args();
     let dir = args.get_one::<String>("dir").unwrap().as_str();
     let command = args.get_one::<String>("command").unwrap().as_str();
@@ -646,13 +793,10 @@ fn run() -> CommandResult<SelectionOutcome> {
     let osc52 = args.get_flag("osc52");
 
     if dir.is_empty() {
-        return Err(CommandError {
-            command: vec!["tmux-thumbs".to_string()],
-            status: None,
-            stderr:
-                "Invalid tmux-thumbs execution. Are you trying to execute tmux-thumbs directly?"
-                    .to_string(),
-        });
+        return Err(OrchestrationError::Startup(
+            "Invalid tmux-thumbs execution. Are you trying to execute tmux-thumbs directly?"
+                .to_string(),
+        ));
     }
 
     let mut executor = RealShell::new();
@@ -678,9 +822,20 @@ fn run() -> CommandResult<SelectionOutcome> {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("{}", error);
+        if debug_enabled() {
+            eprintln!("{}", error.debug_message());
+        } else {
+            eprintln!("{}", error);
+        }
+
         std::process::exit(1);
     }
+}
+
+fn debug_enabled() -> bool {
+    std::env::var("THUMBS_DEBUG")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -765,6 +920,7 @@ mod tests {
         let last_command_outputs = vec![Err(CommandError {
             command: vec![],
             status: Some(1),
+            stdout: "partial output".to_string(),
             stderr: "tmux failed".to_string(),
         })];
         let mut executor = TestShell::new_results(last_command_outputs);
@@ -779,12 +935,29 @@ mod tests {
 
         let error = swapper.capture_active_pane().unwrap_err();
 
-        assert_eq!(error.command[0], "tmux");
-        assert_eq!(error.status, Some(1));
-        assert_eq!(error.stderr, "tmux failed");
+        let OrchestrationError::Command {
+            phase,
+            context,
+            source,
+        } = &error
+        else {
+            panic!("expected command error");
+        };
+
+        assert_eq!(*phase, "capture_active_pane");
+        assert_eq!(source.command[0], "tmux");
+        assert_eq!(source.status, Some(1));
+        assert_eq!(source.stdout, "partial output");
+        assert_eq!(source.stderr, "tmux failed");
+        assert!(context.result_path.contains("thumbs-last-"));
+        assert!(error.to_string().contains("phase `capture_active_pane`"));
         assert!(error.to_string().contains("tmux list-panes"));
         assert!(error.to_string().contains("status 1"));
-        assert!(error.to_string().contains("tmux failed"));
+        assert!(error.to_string().contains("stdout: partial output"));
+        assert!(error.to_string().contains("stderr: tmux failed"));
+        assert!(error.debug_message().contains(context.run_id.as_str()));
+        assert!(error.debug_message().contains(context.result_path.as_str()));
+        assert!(error.debug_message().contains(context.signal.as_str()));
     }
 
     #[test]
@@ -945,6 +1118,7 @@ mod tests {
         let last_command_outputs = vec![Err(CommandError {
             command: vec![],
             status: Some(2),
+            stdout: String::new(),
             stderr: "bash failed".to_string(),
         })];
         let mut executor = TestShell::new_results(last_command_outputs);
@@ -961,9 +1135,17 @@ mod tests {
 
         let error = swapper.execute_command().unwrap_err();
 
-        assert_eq!(error.command[0], "bash");
-        assert_eq!(error.status, Some(2));
-        assert_eq!(error.stderr, "bash failed");
+        let OrchestrationError::Command { phase, source, .. } = &error else {
+            panic!("expected command error");
+        };
+
+        assert_eq!(*phase, "execute_command");
+        assert_eq!(source.command[0], "bash");
+        assert_eq!(source.status, Some(2));
+        assert_eq!(source.stderr, "bash failed");
+        assert!(error.to_string().contains("phase `execute_command`"));
+        assert!(!error.to_string().contains("foobar"));
+        assert!(error.debug_message().contains("foobar"));
     }
 
     #[test]
@@ -1088,6 +1270,7 @@ mod tests {
         let last_command_outputs = vec![Err(CommandError {
             command: vec![],
             status: Some(1),
+            stdout: String::new(),
             stderr: "cat: missing: No such file or directory".to_string(),
         })];
         let mut executor = TestShell::new_results(last_command_outputs);

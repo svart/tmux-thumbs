@@ -194,25 +194,25 @@ command args, status, stdout, stderr when a command fails
 
 **Steps:**
 
-- [ ] Add an orchestration error type that can wrap command errors with a phase label.
-- [ ] Define phase labels such as `capture_active_pane`, `start_picker`, `wait_capture`, `swap_panes`, `resize_pane`, `start_thumbs`, `wait_thumbs`, `read_selection`, `cleanup_result`, and `execute_command`.
-- [ ] Add a lightweight run context struct that carries the run id, wait-for signal names, result path, and pane ids as they become known.
-- [ ] Add a debug output path controlled by an opt-in mechanism, for example `THUMBS_DEBUG=1`, without changing normal tmux UX.
-- [ ] Ensure normal cancellation stays quiet and does not print diagnostics unless debug mode is enabled.
-- [ ] Ensure real failures produce enough information on stderr or tmux display-message to identify the failing phase.
-- [ ] Add tests that a simulated command failure reports both phase context and command context.
-- [ ] Add tests that cancellation is not reported as a failure in normal mode.
+- [x] Add an orchestration error type that can wrap command errors with a phase label.
+- [x] Define phase labels such as `capture_active_pane`, `start_picker`, `wait_capture`, `swap_panes`, `resize_pane`, `start_thumbs`, `wait_thumbs`, `read_selection`, `cleanup_result`, and `execute_command`.
+- [x] Add a lightweight run context struct that carries the run id, wait-for signal names, result path, and pane ids as they become known.
+- [x] Add a debug output path controlled by an opt-in mechanism, for example `THUMBS_DEBUG=1`, without changing normal tmux UX.
+- [x] Ensure normal cancellation stays quiet and does not print diagnostics unless debug mode is enabled.
+- [x] Ensure real failures produce enough information on stderr or tmux display-message to identify the failing phase.
+- [x] Add tests that a simulated command failure reports both phase context and command context.
+- [x] Add tests that cancellation is not reported as a failure in normal mode.
 
 **Acceptance criteria:**
 
-- [ ] A failing command can be traced to both a low-level command and a high-level orchestration phase.
-- [ ] Debug mode includes run id, result path, and wait-for signal names.
-- [ ] Normal successful picks and cancellations do not produce noisy diagnostics.
-- [ ] Diagnostics never include selected text unless it is already part of the failing user command context and debug mode is enabled.
+- [x] A failing command can be traced to both a low-level command and a high-level orchestration phase.
+- [x] Debug mode includes run id, result path, and wait-for signal names.
+- [x] Normal successful picks and cancellations do not produce noisy diagnostics.
+- [x] Diagnostics never include selected text unless it is already part of the failing user command context and debug mode is enabled.
 
 **Verification:**
 
-- [ ] Run `cargo test --bin tmux-thumbs --verbose`.
+- [x] Run `cargo test --bin tmux-thumbs --verbose`.
 - [ ] Manually run with `THUMBS_DEBUG=1` in tmux after `cargo build --release` for one success and one cancellation.
 
 **Dependencies:** Task 1.3.
