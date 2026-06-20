@@ -471,22 +471,22 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Create `ThumbsOptions` for standalone picker settings: alphabet, format, colors, multi, reverse, unique, contrast, position, regexps, target.
-- [ ] Create `SwapperOptions` for tmux orchestrator settings: plugin dir, command templates, OSC52.
-- [ ] Implement `TryFrom<&ArgMatches>` or simple `from_matches` constructors that return `Result`.
-- [ ] Keep clap defaults as the source of defaults or centralize defaults in constants used by clap and tests.
-- [ ] Update `main()` functions to use the typed config.
+- [x] Create `ThumbsOptions` for standalone picker settings: alphabet, format, colors, multi, reverse, unique, contrast, position, regexps, target.
+- [x] Create `SwapperOptions` for tmux orchestrator settings: plugin dir, command templates, OSC52.
+- [x] Implement `TryFrom<&ArgMatches>` or simple `from_matches` constructors that return `Result`.
+- [x] Keep clap defaults as the source of defaults or centralize defaults in constants used by clap and tests.
+- [x] Update `main()` functions to use the typed config.
 
 **Acceptance criteria:**
 
-- [ ] Repeated raw `get_one(...).unwrap()` calls disappear from production `main()` code.
-- [ ] Invalid user-facing values can produce a controlled error.
-- [ ] Defaults remain unchanged.
+- [x] Repeated raw `get_one(...).unwrap()` calls disappear from production `main()` code.
+- [x] Invalid user-facing values can produce a controlled error.
+- [x] Defaults remain unchanged.
 
 **Verification:**
 
-- [ ] Run `cargo test --verbose`.
-- [ ] Run `target/debug/thumbs --help` after build and compare expected flags/defaults.
+- [x] Run `cargo test --verbose`.
+- [x] Run `target/debug/thumbs --help` after build and compare expected flags/defaults.
 
 **Dependencies:** Task 2.1.
 

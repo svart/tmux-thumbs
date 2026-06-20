@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use clap::{Arg, ArgAction, Command as ClapCommand};
+use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 use regex::Regex;
 use std::fmt;
 use std::io::Write;
@@ -911,7 +911,46 @@ fn missing_result_file_error(error: &CommandError) -> bool {
             .unwrap_or(false)
 }
 
-fn app_args() -> clap::ArgMatches {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SwapperOptions {
+    dir: String,
+    command: String,
+    upcase_command: String,
+    multi_command: String,
+    osc52: bool,
+}
+
+impl SwapperOptions {
+    fn from_matches(args: &ArgMatches) -> OrchestrationResult<SwapperOptions> {
+        let options = SwapperOptions {
+            dir: required_tmux_string(args, "dir")?.to_string(),
+            command: required_tmux_string(args, "command")?.to_string(),
+            upcase_command: required_tmux_string(args, "upcase_command")?.to_string(),
+            multi_command: required_tmux_string(args, "multi_command")?.to_string(),
+            osc52: args.get_flag("osc52"),
+        };
+
+        if options.dir.is_empty() {
+            return Err(OrchestrationError::Startup(
+                "Invalid tmux-thumbs execution. Are you trying to execute tmux-thumbs directly?"
+                    .to_string(),
+            ));
+        }
+
+        Ok(options)
+    }
+}
+
+fn required_tmux_string<'a>(
+    args: &'a ArgMatches,
+    name: &'static str,
+) -> OrchestrationResult<&'a str> {
+    args.get_one::<String>(name)
+        .map(String::as_str)
+        .ok_or_else(|| OrchestrationError::Startup(format!("missing required option `{}`", name)))
+}
+
+fn app() -> ClapCommand {
     ClapCommand::new("tmux-thumbs")
     .version(env!("CARGO_PKG_VERSION"))
     .about("A lightning fast version of tmux-fingers, copy/pasting tmux like vimium/vimperator")
@@ -946,32 +985,24 @@ fn app_args() -> clap::ArgMatches {
         .short('o')
         .action(ArgAction::SetTrue),
     )
-    .get_matches()
+}
+
+fn app_args() -> ArgMatches {
+    app().get_matches()
 }
 
 fn run() -> OrchestrationResult<SelectionOutcome> {
     let args = app_args();
-    let dir = args.get_one::<String>("dir").unwrap().as_str();
-    let command = args.get_one::<String>("command").unwrap().as_str();
-    let upcase_command = args.get_one::<String>("upcase_command").unwrap().as_str();
-    let multi_command = args.get_one::<String>("multi_command").unwrap().as_str();
-    let osc52 = args.get_flag("osc52");
-
-    if dir.is_empty() {
-        return Err(OrchestrationError::Startup(
-            "Invalid tmux-thumbs execution. Are you trying to execute tmux-thumbs directly?"
-                .to_string(),
-        ));
-    }
+    let options = SwapperOptions::from_matches(&args)?;
 
     let mut executor = RealShell::new();
     let mut swapper = Swapper::new(
         &mut executor,
-        dir.to_string(),
-        command.to_string(),
-        upcase_command.to_string(),
-        multi_command.to_string(),
-        osc52,
+        options.dir,
+        options.command,
+        options.upcase_command,
+        options.multi_command,
+        options.osc52,
     );
 
     swapper.run()
@@ -1051,6 +1082,65 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn swapper_options_parse_clap_defaults() {
+        let matches = app()
+            .try_get_matches_from(["tmux-thumbs", "--dir", "/plugin"])
+            .unwrap();
+        let options = SwapperOptions::from_matches(&matches).unwrap();
+
+        assert_eq!(options.dir, "/plugin");
+        assert_eq!(
+            options.command,
+            "tmux set-buffer -- \"{}\" && tmux display-message \"Copied {}\""
+        );
+        assert_eq!(
+            options.upcase_command,
+            "tmux set-buffer -- \"{}\" && tmux paste-buffer && tmux display-message \"Copied {}\""
+        );
+        assert_eq!(
+            options.multi_command,
+            "tmux set-buffer -- \"{}\" && tmux paste-buffer && tmux display-message \"Multi copied {}\""
+        );
+        assert!(!options.osc52);
+    }
+
+    #[test]
+    fn swapper_options_parse_custom_commands_and_osc52() {
+        let matches = app()
+            .try_get_matches_from([
+                "tmux-thumbs",
+                "--dir",
+                "/plugin",
+                "--command",
+                "copy {}",
+                "--upcase-command",
+                "paste {}",
+                "--multi-command",
+                "multi {}",
+                "--osc52",
+            ])
+            .unwrap();
+        let options = SwapperOptions::from_matches(&matches).unwrap();
+
+        assert_eq!(options.dir, "/plugin");
+        assert_eq!(options.command, "copy {}");
+        assert_eq!(options.upcase_command, "paste {}");
+        assert_eq!(options.multi_command, "multi {}");
+        assert!(options.osc52);
+    }
+
+    #[test]
+    fn swapper_options_reject_empty_dir() {
+        let matches = app().try_get_matches_from(["tmux-thumbs"]).unwrap();
+        let error = SwapperOptions::from_matches(&matches).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid tmux-thumbs execution. Are you trying to execute tmux-thumbs directly?"
+        );
     }
 
     #[test]
