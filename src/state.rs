@@ -1,11 +1,11 @@
-use regex::Regex;
+use regex::{Match as RegexMatch, Regex};
 use std::collections::HashMap;
 use std::fmt;
 
-const EXCLUDE_PATTERNS: [(&str, &str); 1] =
+const EXCLUDE_PATTERN_DEFS: [(&str, &str); 1] =
     [("bash", r"[[:cntrl:]]\[([0-9]{1,2};)?([0-9]{1,2})?m")];
 
-const PATTERNS: [(&str, &str); 15] = [
+const BUILTIN_PATTERN_DEFS: [(&str, &str); 15] = [
     ("markdown_url", r"\[[^]]*\]\(([^)]+)\)"),
     (
         "url",
@@ -31,6 +31,54 @@ const PATTERNS: [(&str, &str); 15] = [
     ("address", r"0x[0-9a-fA-F]+"),
     ("number", r"[0-9]{4,}"),
 ];
+
+lazy_static! {
+    static ref EXCLUDE_PATTERNS: Vec<Pattern> = compile_pattern_defs(&EXCLUDE_PATTERN_DEFS);
+    static ref BUILTIN_PATTERNS: Vec<Pattern> = compile_pattern_defs(&BUILTIN_PATTERN_DEFS);
+}
+
+#[derive(Debug)]
+pub struct StateError {
+    message: String,
+}
+
+impl fmt::Display for StateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for StateError {}
+
+struct Pattern {
+    name: &'static str,
+    regex: Regex,
+}
+
+fn compile_pattern_defs(defs: &[(&'static str, &'static str)]) -> Vec<Pattern> {
+    defs.iter()
+        .map(|(name, pattern)| Pattern {
+            name,
+            regex: Regex::new(pattern).unwrap(),
+        })
+        .collect()
+}
+
+fn compile_custom_patterns(regexps: &[&str]) -> Result<Vec<Pattern>, StateError> {
+    regexps
+        .iter()
+        .map(|regexp| {
+            Regex::new(regexp)
+                .map(|regex| Pattern {
+                    name: "custom",
+                    regex,
+                })
+                .map_err(|error| StateError {
+                    message: format!("Invalid custom regexp `{}`: {}", regexp, error),
+                })
+        })
+        .collect()
+}
 
 #[derive(Clone)]
 pub struct Match<'a> {
@@ -64,99 +112,53 @@ impl<'a> PartialEq for Match<'a> {
 pub struct State<'a> {
     pub lines: &'a Vec<&'a str>,
     alphabet: &'a str,
-    regexp: &'a Vec<&'a str>,
+    custom_patterns: Vec<Pattern>,
 }
 
 impl<'a> State<'a> {
     pub fn new(lines: &'a Vec<&'a str>, alphabet: &'a str, regexp: &'a Vec<&'a str>) -> State<'a> {
-        State {
+        State::try_new(lines, alphabet, regexp).unwrap_or_else(|error| panic!("{}", error))
+    }
+
+    pub fn try_new(
+        lines: &'a Vec<&'a str>,
+        alphabet: &'a str,
+        regexp: &'a Vec<&'a str>,
+    ) -> Result<State<'a>, StateError> {
+        Ok(State {
             lines,
             alphabet,
-            regexp,
-        }
+            custom_patterns: compile_custom_patterns(regexp)?,
+        })
     }
 
     pub fn matches(&self, reverse: bool, unique: bool) -> Vec<Match<'a>> {
-        let mut matches = Vec::new();
+        let mut matches = self.raw_matches();
 
-        let exclude_patterns = EXCLUDE_PATTERNS
+        self.assign_hints(&mut matches, reverse, unique);
+
+        matches
+    }
+
+    fn raw_matches(&self) -> Vec<Match<'a>> {
+        let patterns = self.pattern_priority();
+
+        self.lines
             .iter()
-            .map(|tuple| (tuple.0, Regex::new(tuple.1).unwrap()))
-            .collect::<Vec<_>>();
+            .enumerate()
+            .flat_map(|(index, line)| scan_line(index, line, &patterns))
+            .collect()
+    }
 
-        let custom_patterns = self
-            .regexp
+    fn pattern_priority(&self) -> Vec<&Pattern> {
+        EXCLUDE_PATTERNS
             .iter()
-            .map(|regexp| ("custom", Regex::new(regexp).expect("Invalid custom regexp")))
-            .collect::<Vec<_>>();
+            .chain(self.custom_patterns.iter())
+            .chain(BUILTIN_PATTERNS.iter())
+            .collect()
+    }
 
-        let patterns = PATTERNS
-            .iter()
-            .map(|tuple| (tuple.0, Regex::new(tuple.1).unwrap()))
-            .collect::<Vec<_>>();
-
-        // This order determines the priority of pattern matching
-        let all_patterns = [exclude_patterns, custom_patterns, patterns].concat();
-
-        for (index, line) in self.lines.iter().enumerate() {
-            let mut chunk: &str = line;
-            let mut offset: usize = 0;
-
-            loop {
-                // For this line we search which patterns match, all of them.
-                let submatches = all_patterns
-                    .iter()
-                    .filter_map(|tuple| tuple.1.find(chunk).map(|m| (tuple.0, tuple.1.clone(), m)))
-                    .collect::<Vec<_>>();
-
-                // Then, we search for the match with the lowest index
-                let first_match_option = submatches
-                    .iter()
-                    .min_by(|x, y| x.2.start().cmp(&y.2.start()));
-
-                if let Some(first_match) = first_match_option {
-                    let (name, pattern, matching) = first_match;
-                    let text = matching.as_str();
-
-                    if let Some(captures) = pattern.captures(text) {
-                        let captures: Vec<(&str, usize)> =
-                            if let Some(capture) = captures.name("match") {
-                                [(capture.as_str(), capture.start())].to_vec()
-                            } else if captures.len() > 1 {
-                                captures
-                                    .iter()
-                                    .skip(1)
-                                    .flatten()
-                                    .map(|capture| (capture.as_str(), capture.start()))
-                                    .collect::<Vec<(&str, usize)>>()
-                            } else {
-                                [(matching.as_str(), 0)].to_vec()
-                            };
-
-                        // Never hint or broke bash color sequences, but process it
-                        if *name != "bash" {
-                            for (subtext, substart) in captures.iter() {
-                                matches.push(Match {
-                                    x: offset + matching.start() + *substart,
-                                    y: index,
-                                    pattern: name,
-                                    text: subtext,
-                                    hint: None,
-                                });
-                            }
-                        }
-
-                        chunk = chunk.get(matching.end()..).expect("Unknown chunk");
-                        offset += matching.end();
-                    } else {
-                        panic!("No matching?");
-                    }
-                } else {
-                    break;
-                }
-            }
-        }
-
+    fn assign_hints(&self, matches: &mut Vec<Match<'a>>, reverse: bool, unique: bool) {
         let alphabet = super::alphabets::get_alphabet(self.alphabet);
         let mut hints = alphabet.hints(matches.len());
 
@@ -171,7 +173,7 @@ impl<'a> State<'a> {
         if unique {
             let mut previous: HashMap<&str, String> = HashMap::new();
 
-            for mat in &mut matches {
+            for mat in matches.iter_mut() {
                 if let Some(previous_hint) = previous.get(mat.text) {
                     mat.hint = Some(previous_hint.clone());
                 } else if let Some(hint) = hints.pop() {
@@ -180,7 +182,7 @@ impl<'a> State<'a> {
                 }
             }
         } else {
-            for mat in &mut matches {
+            for mat in matches.iter_mut() {
                 if let Some(hint) = hints.pop() {
                     mat.hint = Some(hint);
                 }
@@ -190,9 +192,70 @@ impl<'a> State<'a> {
         if reverse {
             matches.reverse();
         }
-
-        matches
     }
+}
+
+fn scan_line<'a>(line_index: usize, line: &'a str, patterns: &[&Pattern]) -> Vec<Match<'a>> {
+    let mut matches = Vec::new();
+    let mut chunk = line;
+    let mut offset = 0;
+
+    while let Some((pattern, matching)) = first_pattern_match(chunk, patterns) {
+        let text = matching.as_str();
+        let captures = extract_captures(&pattern.regex, text);
+
+        // Never hint or break bash color sequences, but process them.
+        if pattern.name != "bash" {
+            for (subtext, substart) in captures {
+                matches.push(Match {
+                    x: offset + matching.start() + substart,
+                    y: line_index,
+                    pattern: pattern.name,
+                    text: subtext,
+                    hint: None,
+                });
+            }
+        }
+
+        chunk = chunk.get(matching.end()..).expect("Unknown chunk");
+        offset += matching.end();
+    }
+
+    matches
+}
+
+fn first_pattern_match<'a, 'p>(
+    chunk: &'a str,
+    patterns: &[&'p Pattern],
+) -> Option<(&'p Pattern, RegexMatch<'a>)> {
+    patterns
+        .iter()
+        .filter_map(|pattern| {
+            pattern
+                .regex
+                .find(chunk)
+                .map(|matching| (*pattern, matching))
+        })
+        .min_by(|x, y| x.1.start().cmp(&y.1.start()))
+}
+
+fn extract_captures<'a>(pattern: &Regex, text: &'a str) -> Vec<(&'a str, usize)> {
+    let captures = pattern.captures(text).expect("No matching?");
+
+    if let Some(capture) = captures.name("match") {
+        return vec![(capture.as_str(), capture.start())];
+    }
+
+    if captures.len() > 1 {
+        return captures
+            .iter()
+            .skip(1)
+            .flatten()
+            .map(|capture| (capture.as_str(), capture.start()))
+            .collect();
+    }
+
+    vec![(text, 0)]
 }
 
 #[cfg(test)]
@@ -233,6 +296,60 @@ mod tests {
 
         assert_eq!(results.first().unwrap().x, "λ ".len());
         assert_eq!(results.first().unwrap().y, 0);
+    }
+
+    #[test]
+    fn try_new_rejects_invalid_custom_regexp() {
+        let lines = split("anything");
+        let custom = ["["].to_vec();
+        let error = State::try_new(&lines, "abcd", &custom).err().unwrap();
+
+        assert!(error.to_string().contains("Invalid custom regexp"));
+    }
+
+    #[test]
+    fn custom_named_capture_uses_match_group() {
+        let lines = split("prefix-123");
+        let custom = [r"prefix-(?P<match>\d+)"].to_vec();
+        let results = State::new(&lines, "abcd", &custom).matches(false, false);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results.first().unwrap().text, "123");
+        assert_eq!(results.first().unwrap().x, "prefix-".len());
+    }
+
+    #[test]
+    fn custom_multiple_capture_groups_become_matches() {
+        let lines = split("left-123");
+        let custom = [r"(left)-(\d+)"].to_vec();
+        let results = State::new(&lines, "abcd", &custom).matches(false, false);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results.first().unwrap().text, "left");
+        assert_eq!(results.get(1).unwrap().text, "123");
+        assert_eq!(results.get(1).unwrap().x, "left-".len());
+    }
+
+    #[test]
+    fn custom_regex_without_captures_uses_full_match() {
+        let lines = split("CUSTOM-123");
+        let custom = [r"CUSTOM-\d+"].to_vec();
+        let results = State::new(&lines, "abcd", &custom).matches(false, false);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results.first().unwrap().text, "CUSTOM-123");
+        assert_eq!(results.first().unwrap().x, 0);
+    }
+
+    #[test]
+    fn custom_regex_wins_priority_tie_with_builtin() {
+        let lines = split("http://foo.bar");
+        let custom = [r"http://foo\.bar"].to_vec();
+        let results = State::new(&lines, "abcd", &custom).matches(false, false);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results.first().unwrap().pattern, "custom");
+        assert_eq!(results.first().unwrap().text, "http://foo.bar");
     }
 
     #[test]

@@ -559,22 +559,22 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Precompile built-in and exclude regexes once using existing `lazy_static`.
-- [ ] Compile custom regexes during state/config construction and return a user-facing error for invalid regexps.
-- [ ] Extract helpers for pattern priority, capture extraction, line scanning, and hint assignment.
-- [ ] Keep priority unchanged: exclude, custom, built-in.
-- [ ] Add regression tests around named capture `match`, multiple capture groups, full-match fallback, and priority ties.
+- [x] Precompile built-in and exclude regexes once using existing `lazy_static`.
+- [x] Compile custom regexes during state/config construction and return a user-facing error for invalid regexps.
+- [x] Extract helpers for pattern priority, capture extraction, line scanning, and hint assignment.
+- [x] Keep priority unchanged: exclude, custom, built-in.
+- [x] Add regression tests around named capture `match`, multiple capture groups, full-match fallback, and priority ties.
 
 **Acceptance criteria:**
 
-- [ ] Built-in regexes are not compiled on every `matches()` call.
-- [ ] Invalid custom regex is handled before interactive UI starts.
-- [ ] Existing state tests still pass unchanged or with clearer names.
+- [x] Built-in regexes are not compiled on every `matches()` call.
+- [x] Invalid custom regex is handled before interactive UI starts.
+- [x] Existing state tests still pass unchanged or with clearer names.
 
 **Verification:**
 
-- [ ] Run focused state tests, for example `cargo test --bin thumbs state::tests::priority -- --exact`.
-- [ ] Run `cargo test --verbose`.
+- [x] Run focused state tests, for example `cargo test --lib state::tests::priority -- --exact`.
+- [x] Run `cargo test --verbose`.
 
 **Dependencies:** Task 2.2.
 

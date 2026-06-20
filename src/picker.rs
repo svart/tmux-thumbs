@@ -278,7 +278,8 @@ fn run_with_options(options: ThumbsOptions) -> PickerResult<bool> {
         .map(String::as_str)
         .collect::<Vec<_>>();
 
-    let mut state = state::State::new(&lines, options.alphabet.as_str(), &regexp);
+    let mut state = state::State::try_new(&lines, options.alphabet.as_str(), &regexp)
+        .map_err(|error| PickerError::Configuration(error.to_string()))?;
 
     let selected = {
         let view_options = view::ViewOptions {
