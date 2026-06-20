@@ -242,25 +242,25 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Create an `ActivePane` struct with pane id, height, optional scroll position, and zoom state.
-- [ ] Create a `ThumbsPane` struct with pane id.
-- [ ] Create a `RunSignals` struct for finished, captured, and start wait-for names.
-- [ ] Make step functions private unless tests need them directly.
-- [ ] Make `main()` call only `swapper.run()`.
-- [ ] Remove internal `Option` fields that only exist to pass data between steps.
+- [x] Create an `ActivePane` struct with pane id, height, optional scroll position, and zoom state.
+- [x] Create a `ThumbsPane` struct with pane id.
+- [x] Create a `RunSignals` struct for finished, captured, and start wait-for names.
+- [x] Make step functions private unless tests need them directly.
+- [x] Make `main()` call only `swapper.run()`.
+- [x] Remove internal `Option` fields that only exist to pass data between steps.
 
 **Acceptance criteria:**
 
-- [ ] It is impossible to call `swap_panes` without explicit `ActivePane` and `ThumbsPane` data.
-- [ ] `main()` no longer contains the orchestration sequence line-by-line.
-- [ ] Tests still verify the same command ordering.
-- [ ] `unwrap()` on orchestration state is removed from production paths.
-- [ ] Each workflow step attaches the phase label defined in Task 1.4 to errors.
+- [x] It is impossible to call `swap_panes` without explicit `ActivePane` and `ThumbsPane` data.
+- [x] `main()` no longer contains the orchestration sequence line-by-line.
+- [x] Tests still verify the same command ordering.
+- [x] `unwrap()` on orchestration state is removed from production paths.
+- [x] Each workflow step attaches the phase label defined in Task 1.4 to errors.
 
 **Verification:**
 
-- [ ] Run `cargo test --bin tmux-thumbs --verbose`.
-- [ ] Run `cargo test --verbose`.
+- [x] Run `cargo test --bin tmux-thumbs --verbose`.
+- [x] Run `cargo test --verbose`.
 
 **Dependencies:** Task 1.4.
 
