@@ -6,4 +6,5 @@ pub mod colors;
 pub mod picker;
 pub mod state;
 pub mod tmux;
+mod tmux_selection;
 pub mod view;

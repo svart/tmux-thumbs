@@ -1,3 +1,4 @@
+use crate::tmux_selection::SelectionSet;
 use crate::{alphabets, colors, view};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
@@ -258,87 +259,6 @@ impl Executor for RealShell {
 enum SelectionOutcome {
     Executed,
     Cancelled,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Selection {
-    text: String,
-    upcase: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SelectionSet {
-    selections: Vec<Selection>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SelectionParseError(String);
-
-impl fmt::Display for SelectionParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Selection {
-    fn parse_line(line: &str, line_number: usize) -> Result<Selection, SelectionParseError> {
-        let Some((upcase, text)) = line.split_once(':') else {
-            return Err(SelectionParseError(format!(
-                "malformed selection line {}: expected `%U:%H`",
-                line_number
-            )));
-        };
-
-        let upcase = match upcase.trim_end() {
-            "true" => true,
-            "false" => false,
-            value => {
-                return Err(SelectionParseError(format!(
-                    "invalid selection upcase flag on line {}: {}",
-                    line_number, value
-                )));
-            }
-        };
-
-        Ok(Selection {
-            text: text.to_string(),
-            upcase,
-        })
-    }
-}
-
-impl SelectionSet {
-    fn parse(content: &str) -> Result<SelectionSet, SelectionParseError> {
-        let selections = content
-            .lines()
-            .enumerate()
-            .map(|(index, line)| Selection::parse_line(line, index + 1))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(SelectionSet { selections })
-    }
-
-    fn is_empty(&self) -> bool {
-        self.selections.is_empty()
-    }
-
-    fn is_multi(&self) -> bool {
-        self.selections.len() > 1
-    }
-
-    fn single(&self) -> Option<&Selection> {
-        self.selections
-            .first()
-            .filter(|_| self.selections.len() == 1)
-    }
-
-    fn multi_text(&self) -> String {
-        self.selections
-            .iter()
-            .map(|selection| selection.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
