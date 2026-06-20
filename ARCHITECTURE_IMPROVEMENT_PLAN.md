@@ -588,20 +588,20 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Change functions that read collections to accept slices such as `&[&str]`.
-- [ ] Store custom regex config in a typed owned structure when practical.
-- [ ] Avoid exposing `pub lines: &'a Vec<&'a str>`; expose only what `View` needs or use an accessor.
-- [ ] Update tests to pass slices directly.
+- [x] Change functions that read collections to accept slices such as `&[&str]`.
+- [x] Store custom regex config in a typed owned structure when practical.
+- [x] Avoid exposing `pub lines: &'a Vec<&'a str>`; expose only what `View` needs or use an accessor.
+- [x] Update tests to pass slices directly.
 
 **Acceptance criteria:**
 
-- [ ] No public function requires `&Vec<T>` when `&[T]` is enough.
-- [ ] Lifetimes become easier to follow, not more complex.
+- [x] No public function requires `&Vec<T>` when `&[T]` is enough.
+- [x] Lifetimes become easier to follow, not more complex.
 
 **Verification:**
 
-- [ ] Run `cargo test --bin thumbs --verbose`.
-- [ ] Run `cargo test --verbose`.
+- [x] Run `cargo test --bin thumbs --verbose`.
+- [x] Run `cargo test --verbose`.
 
 **Dependencies:** Task 2.5.
 

@@ -152,7 +152,7 @@ impl<'a> View<'a> {
     fn render(&self, stdout: &mut dyn Write, typed_hint: &str) {
         write!(stdout, "{}", cursor::Hide).unwrap();
 
-        for (index, line) in self.state.lines.iter().enumerate() {
+        for (index, line) in self.state.lines().iter().enumerate() {
             let clean = line.trim_end_matches(|c: char| c.is_whitespace());
 
             if !clean.is_empty() {
@@ -185,7 +185,7 @@ impl<'a> View<'a> {
             };
 
             // Match coordinates are byte indexes; rendering needs display columns.
-            let line = &self.state.lines[mat.y];
+            let line = &self.state.lines()[mat.y];
             let match_column = display_column(line, mat.x);
             let match_row = terminal_position(mat.y);
             let text = self.make_hint_text(mat.text);
@@ -421,8 +421,8 @@ fn hint_terminal_position(match_column: usize, offset: isize) -> u16 {
 mod tests {
     use super::*;
 
-    fn split(output: &str) -> Vec<&str> {
-        output.split('\n').collect::<Vec<&str>>()
+    fn split(output: &str) -> Box<[&str]> {
+        output.split('\n').collect::<Vec<&str>>().into_boxed_slice()
     }
 
     fn default_colors() -> ViewColors {

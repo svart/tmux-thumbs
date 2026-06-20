@@ -1087,10 +1087,11 @@ mod tests {
             self.executed.clone()
         }
 
-        fn new_window_command(&self) -> Option<&Vec<String>> {
+        fn new_window_command(&self) -> Option<&[String]> {
             self.executions
                 .iter()
                 .find(|command| command.get(1) == Some(&"new-window".to_string()))
+                .map(Vec::as_slice)
         }
     }
 

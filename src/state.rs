@@ -110,26 +110,30 @@ impl<'a> PartialEq for Match<'a> {
 }
 
 pub struct State<'a> {
-    pub lines: &'a Vec<&'a str>,
+    lines: &'a [&'a str],
     alphabet: &'a str,
     custom_patterns: Vec<Pattern>,
 }
 
 impl<'a> State<'a> {
-    pub fn new(lines: &'a Vec<&'a str>, alphabet: &'a str, regexp: &'a Vec<&'a str>) -> State<'a> {
+    pub fn new(lines: &'a [&'a str], alphabet: &'a str, regexp: &[&str]) -> State<'a> {
         State::try_new(lines, alphabet, regexp).unwrap_or_else(|error| panic!("{}", error))
     }
 
     pub fn try_new(
-        lines: &'a Vec<&'a str>,
+        lines: &'a [&'a str],
         alphabet: &'a str,
-        regexp: &'a Vec<&'a str>,
+        regexp: &[&str],
     ) -> Result<State<'a>, StateError> {
         Ok(State {
             lines,
             alphabet,
             custom_patterns: compile_custom_patterns(regexp)?,
         })
+    }
+
+    pub fn lines(&self) -> &[&'a str] {
+        self.lines
     }
 
     pub fn matches(&self, reverse: bool, unique: bool) -> Vec<Match<'a>> {
@@ -262,8 +266,8 @@ fn extract_captures<'a>(pattern: &Regex, text: &'a str) -> Vec<(&'a str, usize)>
 mod tests {
     use super::*;
 
-    fn split(output: &str) -> Vec<&str> {
-        output.split('\n').collect::<Vec<&str>>()
+    fn split(output: &str) -> Box<[&str]> {
+        output.split('\n').collect::<Vec<&str>>().into_boxed_slice()
     }
 
     #[test]
