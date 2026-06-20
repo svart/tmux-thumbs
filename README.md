@@ -540,6 +540,9 @@ make it better, I'll really appreciate a pull request. ;)
 For a maintainer-focused overview of the runtime flow and module boundaries,
 see [docs/architecture.md](docs/architecture.md).
 
+For local verification commands, including safe shell wrapper syntax checks,
+see [docs/verification.md](docs/verification.md).
+
 # License
 
 [MIT](https://github.com/fcsonline/tmux-thumbs/blob/master/LICENSE)
