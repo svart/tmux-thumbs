@@ -110,6 +110,11 @@ enum OrchestrationError {
         context: Box<RunContext>,
         source: Box<CommandError>,
     },
+    Parse {
+        phase: &'static str,
+        context: Box<RunContext>,
+        message: String,
+    },
 }
 
 impl OrchestrationError {
@@ -122,6 +127,14 @@ impl OrchestrationError {
             phase,
             context: Box::new(context),
             source: Box::new(source),
+        }
+    }
+
+    fn parse(phase: &'static str, context: RunContext, message: String) -> OrchestrationError {
+        OrchestrationError::Parse {
+            phase,
+            context: Box::new(context),
+            message,
         }
     }
 
@@ -144,6 +157,22 @@ impl OrchestrationError {
                 context.active_pane_id.as_deref().unwrap_or("<unknown>"),
                 context.thumbs_pane_id.as_deref().unwrap_or("<unknown>")
             ),
+            OrchestrationError::Parse {
+                phase,
+                context,
+                message,
+            } => format!(
+                "phase `{}` failed for run `{}`: {}\nresult_path: {}\nsignals: finished={}, captured={}, start={}\nactive_pane_id: {}\nthumbs_pane_id: {}",
+                phase,
+                context.run_id,
+                message,
+                context.result_path,
+                context.signal,
+                context.capture_signal,
+                context.start_signal,
+                context.active_pane_id.as_deref().unwrap_or("<unknown>"),
+                context.thumbs_pane_id.as_deref().unwrap_or("<unknown>")
+            ),
         }
     }
 }
@@ -159,6 +188,9 @@ impl fmt::Display for OrchestrationError {
                     phase,
                     source.format_with_command(false)
                 )
+            }
+            OrchestrationError::Parse { phase, message, .. } => {
+                write!(f, "phase `{}` failed: {}", phase, message)
             }
         }
     }
@@ -235,6 +267,82 @@ struct ActivePane {
     height: i32,
     scroll_position: Option<i32>,
     zoomed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PaneParseError(String);
+
+impl fmt::Display for PaneParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl ActivePane {
+    fn parse_list_panes(output: &str) -> Result<ActivePane, PaneParseError> {
+        for (line_index, line) in output.lines().enumerate() {
+            if line.is_empty() {
+                continue;
+            }
+
+            let fields = line.split('\t').collect::<Vec<_>>();
+            let [pane_id, in_mode, height, scroll_position, zoomed, active] = fields.as_slice()
+            else {
+                return Err(PaneParseError(format!(
+                    "malformed list-panes line {}: expected 6 tab-separated fields, got {}",
+                    line_index + 1,
+                    fields.len()
+                )));
+            };
+
+            if *active != "active" {
+                continue;
+            }
+
+            let in_mode = parse_tmux_flag(in_mode, "pane_in_mode", line_index + 1)?;
+            let height = height.parse().map_err(|_| {
+                PaneParseError(format!(
+                    "invalid pane_height on list-panes line {}: {}",
+                    line_index + 1,
+                    height
+                ))
+            })?;
+            let zoomed = parse_tmux_flag(zoomed, "window_zoomed_flag", line_index + 1)?;
+            let scroll_position = if in_mode {
+                Some(scroll_position.parse().map_err(|_| {
+                    PaneParseError(format!(
+                        "invalid scroll_position on list-panes line {}: {}",
+                        line_index + 1,
+                        scroll_position
+                    ))
+                })?)
+            } else {
+                None
+            };
+
+            return Ok(ActivePane {
+                id: pane_id.to_string(),
+                height,
+                scroll_position,
+                zoomed,
+            });
+        }
+
+        Err(PaneParseError(
+            "missing active pane in tmux list-panes output".to_string(),
+        ))
+    }
+}
+
+fn parse_tmux_flag(value: &str, name: &str, line_number: usize) -> Result<bool, PaneParseError> {
+    match value {
+        "0" => Ok(false),
+        "1" => Ok(true),
+        _ => Err(PaneParseError(format!(
+            "invalid {} on list-panes line {}: {}",
+            name, line_number, value
+        ))),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -354,7 +462,7 @@ impl<'a> Swapper<'a> {
       "tmux",
       "list-panes",
       "-F",
-      "#{pane_id}:#{?pane_in_mode,1,0}:#{pane_height}:#{scroll_position}:#{window_zoomed_flag}:#{?pane_active,active,nope}",
+      "#{pane_id}\t#{?pane_in_mode,1,0}\t#{pane_height}\t#{scroll_position}\t#{window_zoomed_flag}\t#{?pane_active,active,nope}",
     ];
 
         let output = self
@@ -363,50 +471,13 @@ impl<'a> Swapper<'a> {
             .map_err(|error| self.command_error("capture_active_pane", error))?
             .stdout;
 
-        let lines: Vec<&str> = output.split('\n').collect();
-        let chunks: Vec<Vec<&str>> = lines
-            .into_iter()
-            .map(|line| line.split(':').collect())
-            .collect();
+        let active_pane = ActivePane::parse_list_panes(&output).map_err(|error| {
+            OrchestrationError::parse("capture_active_pane", self.run_context(), error.to_string())
+        })?;
 
-        let active_pane = chunks
-            .iter()
-            .find(|&chunks| *chunks.get(5).unwrap() == "active")
-            .expect("Unable to find active pane");
+        self.active_pane_id = Some(active_pane.id.clone());
 
-        let pane_id = active_pane.first().unwrap().to_string();
-
-        self.active_pane_id = Some(pane_id.clone());
-
-        let pane_height = active_pane
-            .get(2)
-            .unwrap()
-            .parse()
-            .expect("Unable to retrieve pane height");
-
-        let scroll_position = if *active_pane.get(1).unwrap() == "1" {
-            Some(
-                active_pane
-                    .get(3)
-                    .unwrap()
-                    .parse()
-                    .expect("Unable to retrieve pane scroll"),
-            )
-        } else {
-            None
-        };
-
-        let zoomed_pane = *active_pane
-            .get(4)
-            .expect("Unable to retrieve zoom pane property")
-            == "1";
-
-        Ok(ActivePane {
-            id: pane_id,
-            height: pane_height,
-            scroll_position,
-            zoomed: zoomed_pane,
-        })
+        Ok(active_pane)
     }
 
     fn execute_thumbs(&mut self, active_pane: &ActivePane) -> OrchestrationResult<ThumbsPane> {
@@ -918,8 +989,10 @@ mod tests {
 
     #[test]
     fn retrieve_active_pane() {
-        let last_command_outputs =
-            vec!["%97:100:24:1:0:active\n%106:100:24:1:0:nope\n%107:100:24:1:0:nope\n".to_string()];
+        let last_command_outputs = vec![
+            "%97\t0\t24\t1\t0\tactive\n%106\t0\t24\t1\t0\tnope\n%107\t0\t24\t1\t0\tnope\n"
+                .to_string(),
+        ];
         let mut executor = TestShell::new(last_command_outputs);
         let mut swapper = Swapper::new(
             &mut executor,
@@ -936,6 +1009,78 @@ mod tests {
         assert_eq!(active_pane.height, 24);
         assert_eq!(active_pane.scroll_position, None);
         assert!(!active_pane.zoomed);
+    }
+
+    #[test]
+    fn parses_copy_mode_active_pane() {
+        let active_pane = ActivePane::parse_list_panes("%97\t1\t24\t3\t1\tactive\n").unwrap();
+
+        assert_eq!(active_pane.id, "%97");
+        assert_eq!(active_pane.height, 24);
+        assert_eq!(active_pane.scroll_position, Some(3));
+        assert!(active_pane.zoomed);
+    }
+
+    #[test]
+    fn active_pane_parser_reports_missing_active_pane() {
+        let error = ActivePane::parse_list_panes("%97\t0\t24\t0\t0\tnope\n").unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "missing active pane in tmux list-panes output"
+        );
+    }
+
+    #[test]
+    fn active_pane_parser_reports_malformed_line() {
+        let error = ActivePane::parse_list_panes("%97\t0\t24\n").unwrap_err();
+
+        assert!(error.to_string().contains("malformed list-panes line 1"));
+    }
+
+    #[test]
+    fn active_pane_parser_reports_invalid_height() {
+        let error = ActivePane::parse_list_panes("%97\t0\ttall\t0\t0\tactive\n").unwrap_err();
+
+        assert!(error.to_string().contains("invalid pane_height"));
+    }
+
+    #[test]
+    fn active_pane_parser_reports_invalid_scroll_position() {
+        let error = ActivePane::parse_list_panes("%97\t1\t24\tfar\t0\tactive\n").unwrap_err();
+
+        assert!(error.to_string().contains("invalid scroll_position"));
+    }
+
+    #[test]
+    fn active_pane_parser_reports_invalid_zoom_flag() {
+        let error = ActivePane::parse_list_panes("%97\t0\t24\t0\tmaybe\tactive\n").unwrap_err();
+
+        assert!(error.to_string().contains("invalid window_zoomed_flag"));
+    }
+
+    #[test]
+    fn malformed_active_pane_output_returns_phase_error() {
+        let last_command_outputs = vec!["%97\t0\t24\n".to_string()];
+        let mut executor = TestShell::new(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            false,
+        );
+
+        let error = swapper.capture_active_pane().unwrap_err();
+
+        let OrchestrationError::Parse { phase, message, .. } = &error else {
+            panic!("expected parse error");
+        };
+
+        assert_eq!(*phase, "capture_active_pane");
+        assert!(message.contains("malformed list-panes line 1"));
+        assert!(error.to_string().contains("phase `capture_active_pane`"));
     }
 
     #[test]
@@ -990,7 +1135,8 @@ mod tests {
             "".to_string(),
             "%100".to_string(),
             "".to_string(),
-            "%106:100:24:1:0:nope\n%98:100:24:1:0:active\n%107:100:24:1:0:nope\n".to_string(),
+            "%106\t0\t24\t1\t0\tnope\n%98\t0\t24\t1\t0\tactive\n%107\t0\t24\t1\t0\tnope\n"
+                .to_string(),
         ];
         let mut executor = TestShell::new(last_command_outputs);
         let mut swapper = Swapper::new(
@@ -1019,7 +1165,8 @@ mod tests {
             "".to_string(),
             "%100".to_string(),
             "".to_string(),
-            "%106:0:12:0:0:nope\n%98:0:8:0:0:active\n%107:0:12:0:0:nope\n".to_string(),
+            "%106\t0\t12\t0\t0\tnope\n%98\t0\t8\t0\t0\tactive\n%107\t0\t12\t0\t0\tnope\n"
+                .to_string(),
         ];
         let mut executor = TestShell::new(last_command_outputs);
         let mut swapper = Swapper::new(
@@ -1219,7 +1366,7 @@ mod tests {
             "".to_string(),
             "%100".to_string(),
             "".to_string(),
-            "%98:0:8:0:0:active\n".to_string(),
+            "%98\t0\t8\t0\t0\tactive\n".to_string(),
         ];
         let mut executor = TestShell::new(last_command_outputs);
         let mut swapper = Swapper::new(
@@ -1320,7 +1467,7 @@ mod tests {
             "".to_string(),
             "%100".to_string(),
             "@thumbs-fg-color \"bright green\"\n".to_string(),
-            "%98:0:8:0:0:active\n".to_string(),
+            "%98\t0\t8\t0\t0\tactive\n".to_string(),
         ];
         let mut executor = TestShell::new(last_command_outputs);
         let mut swapper = Swapper::new(
@@ -1350,7 +1497,7 @@ mod tests {
             "%100".to_string(),
             "@thumbs-reverse \"0\"\n@thumbs-unique disabled\n@thumbs-contrast enabled\n"
                 .to_string(),
-            "%98:0:8:0:0:active\n".to_string(),
+            "%98\t0\t8\t0\t0\tactive\n".to_string(),
         ];
         let mut executor = TestShell::new(last_command_outputs);
         let mut swapper = Swapper::new(

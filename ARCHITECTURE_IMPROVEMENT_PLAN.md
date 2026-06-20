@@ -274,21 +274,21 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Change the tmux format string to use a delimiter that cannot appear in the formatted numeric fields, such as tab.
-- [ ] Add `ActivePane::parse_list_panes(output: &str) -> Result<ActivePane>`.
-- [ ] Return clear errors for missing active pane, malformed lines, invalid height, invalid scroll position, and invalid zoom flag.
-- [ ] Add table-style tests for valid active pane, no active pane, malformed line, and copy-mode scroll state.
+- [x] Change the tmux format string to use a delimiter that cannot appear in the formatted numeric fields, such as tab.
+- [x] Add `ActivePane::parse_list_panes(output: &str) -> Result<ActivePane>`.
+- [x] Return clear errors for missing active pane, malformed lines, invalid height, invalid scroll position, and invalid zoom flag.
+- [x] Add table-style tests for valid active pane, no active pane, malformed line, and copy-mode scroll state.
 
 **Acceptance criteria:**
 
-- [ ] No production parser uses unchecked field indexing.
-- [ ] Malformed tmux output is a controlled error.
-- [ ] Existing active pane behavior is preserved.
+- [x] No production parser uses unchecked field indexing.
+- [x] Malformed tmux output is a controlled error.
+- [x] Existing active pane behavior is preserved.
 
 **Verification:**
 
-- [ ] Run `cargo test --bin tmux-thumbs tests::retrieve_active_pane -- --exact`.
-- [ ] Run `cargo test --bin tmux-thumbs --verbose`.
+- [x] Run `cargo test --bin tmux-thumbs tests::retrieve_active_pane -- --exact`.
+- [x] Run `cargo test --bin tmux-thumbs --verbose`.
 
 **Dependencies:** Task 1.5.
 
