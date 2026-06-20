@@ -1,7 +1,7 @@
 use super::*;
 use std::char;
 use std::fmt;
-use std::io::{self, stdout, Read, Write};
+use std::io::{self, Read, Write, stdout};
 use termion::async_stdin;
 use termion::event::Key;
 use termion::input::TermRead;

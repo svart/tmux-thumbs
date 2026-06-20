@@ -1,9 +1,9 @@
+use crate::tmux_options::PickerArgs;
 #[cfg(test)]
 use crate::tmux_options::shell_quote;
-use crate::tmux_options::PickerArgs;
 use crate::tmux_script::PaneScript;
 use crate::tmux_selection::SelectionSet;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 use std::fmt;
 use std::io::Write;
@@ -450,11 +450,11 @@ impl<'a> Swapper<'a> {
 
     fn capture_active_pane(&mut self) -> OrchestrationResult<ActivePane> {
         let active_command = [
-      "tmux",
-      "list-panes",
-      "-F",
-      "#{pane_id}\t#{?pane_in_mode,1,0}\t#{pane_height}\t#{scroll_position}\t#{window_zoomed_flag}\t#{?pane_active,active,nope}",
-    ];
+            "tmux",
+            "list-panes",
+            "-F",
+            "#{pane_id}\t#{?pane_in_mode,1,0}\t#{pane_height}\t#{scroll_position}\t#{window_zoomed_flag}\t#{?pane_active,active,nope}",
+        ];
 
         let output = self
             .executor
@@ -1566,14 +1566,18 @@ mod tests {
 
         assert_ne!(result_path, "/tmp/thumbs-last");
         assert!(pane_command.contains(&format!(" -t '{}' ", result_path)));
-        assert!(executor
-            .executions
-            .iter()
-            .any(|command| command.as_slice() == ["cat", result_path.as_str()]));
-        assert!(executor
-            .executions
-            .iter()
-            .any(|command| command.as_slice() == ["rm", "-f", result_path.as_str()]));
+        assert!(
+            executor
+                .executions
+                .iter()
+                .any(|command| command.as_slice() == ["cat", result_path.as_str()])
+        );
+        assert!(
+            executor
+                .executions
+                .iter()
+                .any(|command| command.as_slice() == ["rm", "-f", result_path.as_str()])
+        );
     }
 
     #[test]

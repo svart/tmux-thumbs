@@ -1,6 +1,7 @@
 use regex::{Match as RegexMatch, Regex};
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::LazyLock;
 
 const EXCLUDE_PATTERN_DEFS: [(&str, &str); 1] =
     [("bash", r"[[:cntrl:]]\[([0-9]{1,2};)?([0-9]{1,2})?m")];
@@ -32,10 +33,10 @@ const BUILTIN_PATTERN_DEFS: [(&str, &str); 15] = [
     ("number", r"[0-9]{4,}"),
 ];
 
-lazy_static! {
-    static ref EXCLUDE_PATTERNS: Vec<Pattern> = compile_pattern_defs(&EXCLUDE_PATTERN_DEFS);
-    static ref BUILTIN_PATTERNS: Vec<Pattern> = compile_pattern_defs(&BUILTIN_PATTERN_DEFS);
-}
+static EXCLUDE_PATTERNS: LazyLock<Vec<Pattern>> =
+    LazyLock::new(|| compile_pattern_defs(&EXCLUDE_PATTERN_DEFS));
+static BUILTIN_PATTERNS: LazyLock<Vec<Pattern>> =
+    LazyLock::new(|| compile_pattern_defs(&BUILTIN_PATTERN_DEFS));
 
 #[derive(Debug)]
 pub struct StateError {
@@ -370,7 +371,9 @@ mod tests {
 
     #[test]
     fn match_docker() {
-        let lines = split("latest sha256:30557a29d5abc51e5f1d5b472e79b7e296f595abcf19fe6b9199dbbc809c6ff4 20 hours ago");
+        let lines = split(
+            "latest sha256:30557a29d5abc51e5f1d5b472e79b7e296f595abcf19fe6b9199dbbc809c6ff4 20 hours ago",
+        );
         let custom = [].to_vec();
         let results = State::new(&lines, "abcd", &custom).matches(false, false);
 
@@ -383,7 +386,9 @@ mod tests {
 
     #[test]
     fn match_bash() {
-        let lines = split("path: [32m/var/log/nginx.log[m\npath: [32mtest/log/nginx-2.log:32[mfolder/.nginx@4df2.log");
+        let lines = split(
+            "path: [32m/var/log/nginx.log[m\npath: [32mtest/log/nginx-2.log:32[mfolder/.nginx@4df2.log",
+        );
         let custom = [].to_vec();
         let results = State::new(&lines, "abcd", &custom).matches(false, false);
 
@@ -395,7 +400,9 @@ mod tests {
 
     #[test]
     fn match_paths() {
-        let lines = split("Lorem /tmp/foo/bar_lol, lorem\n Lorem /var/log/boot-strap.log lorem ../log/kern.log lorem");
+        let lines = split(
+            "Lorem /tmp/foo/bar_lol, lorem\n Lorem /var/log/boot-strap.log lorem ../log/kern.log lorem",
+        );
         let custom = [].to_vec();
         let results = State::new(&lines, "abcd", &custom).matches(false, false);
 
@@ -452,7 +459,9 @@ mod tests {
 
     #[test]
     fn match_shas() {
-        let lines = split("Lorem fd70b5695 5246ddf f924213 lorem\n Lorem 973113963b491874ab2e372ee60d4b4cb75f717c lorem");
+        let lines = split(
+            "Lorem fd70b5695 5246ddf f924213 lorem\n Lorem 973113963b491874ab2e372ee60d4b4cb75f717c lorem",
+        );
         let custom = [].to_vec();
         let results = State::new(&lines, "abcd", &custom).matches(false, false);
 
@@ -481,7 +490,9 @@ mod tests {
 
     #[test]
     fn match_ipv6s() {
-        let lines = split("Lorem ipsum fe80::2:202:fe4 lorem\n Lorem 2001:67c:670:202:7ba8:5e41:1591:d723 lorem fe80::2:1 lorem ipsum fe80:22:312:fe::1%eth0");
+        let lines = split(
+            "Lorem ipsum fe80::2:202:fe4 lorem\n Lorem 2001:67c:670:202:7ba8:5e41:1591:d723 lorem fe80::2:1 lorem ipsum fe80:22:312:fe::1%eth0",
+        );
         let custom = [].to_vec();
         let results = State::new(&lines, "abcd", &custom).matches(false, false);
 
@@ -512,7 +523,9 @@ mod tests {
 
     #[test]
     fn match_urls() {
-        let lines = split("Lorem ipsum https://www.rust-lang.org/tools lorem\n Lorem ipsumhttps://crates.io lorem https://github.io?foo=bar lorem ssh://github.io");
+        let lines = split(
+            "Lorem ipsum https://www.rust-lang.org/tools lorem\n Lorem ipsumhttps://crates.io lorem https://github.io?foo=bar lorem ssh://github.io",
+        );
         let custom = [].to_vec();
         let results = State::new(&lines, "abcd", &custom).matches(false, false);
 
@@ -571,8 +584,9 @@ mod tests {
 
     #[test]
     fn match_process_port() {
-        let lines =
-      split("Lorem 5695 52463 lorem\n Lorem 973113 lorem 99999 lorem 8888 lorem\n   23456 lorem 5432 lorem 23444");
+        let lines = split(
+            "Lorem 5695 52463 lorem\n Lorem 973113 lorem 99999 lorem 8888 lorem\n   23456 lorem 5432 lorem 23444",
+        );
         let custom = [].to_vec();
         let results = State::new(&lines, "abcd", &custom).matches(false, false);
 
@@ -612,7 +626,9 @@ mod tests {
 
     #[test]
     fn priority() {
-        let lines = split("Lorem [link](http://foo.bar) ipsum CUSTOM-52463 lorem ISSUE-123 lorem\nLorem /var/fd70b569/9999.log 52463 lorem\n Lorem 973113 lorem 123e4567-e89b-12d3-a456-426655440000 lorem 8888 lorem\n  https://crates.io/23456/fd70b569 lorem");
+        let lines = split(
+            "Lorem [link](http://foo.bar) ipsum CUSTOM-52463 lorem ISSUE-123 lorem\nLorem /var/fd70b569/9999.log 52463 lorem\n Lorem 973113 lorem 123e4567-e89b-12d3-a456-426655440000 lorem 8888 lorem\n  https://crates.io/23456/fd70b569 lorem",
+        );
         let custom = ["CUSTOM-[0-9]{4,}", "ISSUE-[0-9]{3}"].to_vec();
         let results = State::new(&lines, "abcd", &custom).matches(false, false);
 

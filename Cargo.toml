@@ -2,7 +2,7 @@
 name = "thumbs"
 version = "0.9.0"
 authors = ["Ferran Basora <fcsonline@gmail.com>"]
-edition = "2018"
+edition = "2024"
 rust-version = "1.85"
 description = "A lightning fast version copy/pasting like vimium/vimperator"
 repository = "https://github.com/fcsonline/tmux-thumbs"
@@ -15,7 +15,6 @@ regex = "1.12.4"
 clap = "4.6.1"
 base64 = "0.22.1"
 unicode-width = "0.2.2"
-lazy_static = "1.5.0"
 
 [[bin]]
 name = "thumbs"

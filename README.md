@@ -52,7 +52,8 @@ the plugin!
 
 ## Installation checking out the source code
 
-`tmux-thumbs` is written in Rust. It requires Rust 1.85 or newer. The
+`tmux-thumbs` is written in Rust using the Rust 2024 edition. It requires Rust
+1.85 or newer. The
 recommended way to install Rust is from the official [download page](https://rustup.rs/).
 
 Clone the repo:

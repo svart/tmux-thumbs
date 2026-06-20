@@ -1,6 +1,11 @@
 use regex::Regex;
 use std::fmt;
+use std::sync::LazyLock;
 use termion::color;
+
+static RGB_COLOR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^#([[:xdigit:]]{2})([[:xdigit:]]{2})([[:xdigit:]]{2})$").unwrap()
+});
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ColorSpec {
@@ -18,12 +23,7 @@ pub enum ColorSpec {
 
 impl ColorSpec {
     pub fn parse(color_name: &str) -> Result<ColorSpec, ColorParseError> {
-        lazy_static! {
-            static ref RGB: Regex =
-                Regex::new(r"^#([[:xdigit:]]{2})([[:xdigit:]]{2})([[:xdigit:]]{2})$").unwrap();
-        }
-
-        if let Some(captures) = RGB.captures(color_name) {
+        if let Some(captures) = RGB_COLOR.captures(color_name) {
             let r = u8::from_str_radix(captures.get(1).unwrap().as_str(), 16).unwrap();
             let g = u8::from_str_radix(captures.get(2).unwrap().as_str(), 16).unwrap();
             let b = u8::from_str_radix(captures.get(3).unwrap().as_str(), 16).unwrap();
