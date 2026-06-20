@@ -615,23 +615,23 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Add a `Selection` struct with `text: String` and `upcase: bool`.
-- [ ] Add `Selection::parse_line` for `%U:%H` lines.
-- [ ] Add `SelectionSet` or helper functions for single vs multi selection.
-- [ ] Treat empty content as cancellation.
-- [ ] Treat malformed non-empty content as an error.
-- [ ] Preserve support for selected text containing `:` by continuing to split only once.
+- [x] Add a `Selection` struct with `text: String` and `upcase: bool`.
+- [x] Add `Selection::parse_line` for `%U:%H` lines.
+- [x] Add `SelectionSet` or helper functions for single vs multi selection.
+- [x] Treat empty content as cancellation.
+- [x] Treat malformed non-empty content as an error.
+- [x] Preserve support for selected text containing `:` by continuing to split only once.
 
 **Acceptance criteria:**
 
-- [ ] Command selection no longer depends on raw tuple/string logic.
-- [ ] Malformed result content is detectable in tests.
-- [ ] Multi-selection behavior is unchanged for valid selections.
+- [x] Command selection no longer depends on raw tuple/string logic.
+- [x] Malformed result content is detectable in tests.
+- [x] Multi-selection behavior is unchanged for valid selections.
 
 **Verification:**
 
-- [ ] Run `cargo test --bin tmux-thumbs --verbose`.
-- [ ] Run `cargo test --verbose`.
+- [x] Run `cargo test --bin tmux-thumbs --verbose`.
+- [x] Run `cargo test --verbose`.
 
 **Dependencies:** Task 1.3.
 

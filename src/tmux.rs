@@ -261,6 +261,87 @@ enum SelectionOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct Selection {
+    text: String,
+    upcase: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SelectionSet {
+    selections: Vec<Selection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SelectionParseError(String);
+
+impl fmt::Display for SelectionParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Selection {
+    fn parse_line(line: &str, line_number: usize) -> Result<Selection, SelectionParseError> {
+        let Some((upcase, text)) = line.split_once(':') else {
+            return Err(SelectionParseError(format!(
+                "malformed selection line {}: expected `%U:%H`",
+                line_number
+            )));
+        };
+
+        let upcase = match upcase.trim_end() {
+            "true" => true,
+            "false" => false,
+            value => {
+                return Err(SelectionParseError(format!(
+                    "invalid selection upcase flag on line {}: {}",
+                    line_number, value
+                )));
+            }
+        };
+
+        Ok(Selection {
+            text: text.to_string(),
+            upcase,
+        })
+    }
+}
+
+impl SelectionSet {
+    fn parse(content: &str) -> Result<SelectionSet, SelectionParseError> {
+        let selections = content
+            .lines()
+            .enumerate()
+            .map(|(index, line)| Selection::parse_line(line, index + 1))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(SelectionSet { selections })
+    }
+
+    fn is_empty(&self) -> bool {
+        self.selections.is_empty()
+    }
+
+    fn is_multi(&self) -> bool {
+        self.selections.len() > 1
+    }
+
+    fn single(&self) -> Option<&Selection> {
+        self.selections
+            .first()
+            .filter(|_| self.selections.len() == 1)
+    }
+
+    fn multi_text(&self) -> String {
+        self.selections
+            .iter()
+            .map(|selection| selection.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ActivePane {
     id: String,
     height: i32,
@@ -817,89 +898,82 @@ impl<'a> Swapper<'a> {
             return Ok(SelectionOutcome::Cancelled);
         }
 
-        let items: Vec<&str> = content.split('\n').collect();
+        let selections = SelectionSet::parse(&content).map_err(|error| {
+            OrchestrationError::parse("parse_selection", self.run_context(), error.to_string())
+        })?;
 
-        if items.len() > 1 {
-            let text = items
-                .iter()
-                .map(|item| item.splitn(2, ':').last().unwrap())
-                .collect::<Vec<&str>>()
-                .join(" ");
+        if selections.is_empty() {
+            return Ok(SelectionOutcome::Cancelled);
+        }
 
+        if selections.is_multi() {
+            let text = selections.multi_text();
             self.execute_final_command(&text, &self.multi_command.clone())?;
 
             return Ok(SelectionOutcome::Executed);
         }
 
-        // Only one item
-        let item: &str = items.first().unwrap();
+        if let Some(selection) = selections.single() {
+            if self.osc52 {
+                let base64_text = BASE64_STANDARD.encode(selection.text.as_bytes());
+                let osc_seq = format!("\x1b]52;0;{}\x07", base64_text);
+                let tmux_seq = format!("\x1bPtmux;{}\x1b\\", osc_seq.replace("\x1b", "\x1b\x1b"));
 
-        let mut splitter = item.splitn(2, ':');
-
-        if let Some(upcase) = splitter.next() {
-            if let Some(text) = splitter.next() {
-                if self.osc52 {
-                    let base64_text = BASE64_STANDARD.encode(text.as_bytes());
-                    let osc_seq = format!("\x1b]52;0;{}\x07", base64_text);
-                    let tmux_seq =
-                        format!("\x1bPtmux;{}\x1b\\", osc_seq.replace("\x1b", "\x1b\x1b"));
-
-                    // FIXME: Review if this comment is still rellevant
-                    //
-                    // When the user selects a match:
-                    // 1. The `rustbox` object created in the `viewbox` above is dropped.
-                    // 2. During its `drop`, the `rustbox` object sends a CSI 1049 escape
-                    //    sequence to tmux.
-                    // 3. This escape sequence causes the `window_pane_alternate_off` function
-                    //    in tmux to be called.
-                    // 4. In `window_pane_alternate_off`, tmux sets the needs-redraw flag in the
-                    //    pane.
-                    // 5. If we print the OSC copy escape sequence before the redraw is completed,
-                    //    tmux will *not* send the sequence to the host terminal. See the following
-                    //    call chain in tmux: `input_dcs_dispatch` -> `screen_write_rawstring`
-                    //    -> `tty_write` -> `tty_client_ready`. In this case, `tty_client_ready`
-                    //    will return false, thus preventing the escape sequence from being sent.
-                    //
-                    // Therefore, for now we wait a little bit here for the redraw to finish.
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-
-                    std::io::stdout().write_all(tmux_seq.as_bytes()).unwrap();
-                    std::io::stdout().flush().unwrap();
-                }
-
-                let execute_command = if upcase.trim_end() == "true" {
-                    self.upcase_command.clone()
-                } else {
-                    self.command.clone()
-                };
-
-                // The command we run has two arguments:
-                //  * The first arg is the (trimmed) text. This gets stored in a variable, in order to
-                //    preserve quoting and special characters.
+                // FIXME: Review if this comment is still rellevant
                 //
-                //  * The second argument is the user's command, with the '{}' token replaced with an
-                //    unquoted reference to the variable containing the text.
+                // When the user selects a match:
+                // 1. The `rustbox` object created in the `viewbox` above is dropped.
+                // 2. During its `drop`, the `rustbox` object sends a CSI 1049 escape
+                //    sequence to tmux.
+                // 3. This escape sequence causes the `window_pane_alternate_off` function
+                //    in tmux to be called.
+                // 4. In `window_pane_alternate_off`, tmux sets the needs-redraw flag in the
+                //    pane.
+                // 5. If we print the OSC copy escape sequence before the redraw is completed,
+                //    tmux will *not* send the sequence to the host terminal. See the following
+                //    call chain in tmux: `input_dcs_dispatch` -> `screen_write_rawstring`
+                //    -> `tty_write` -> `tty_client_ready`. In this case, `tty_client_ready`
+                //    will return false, thus preventing the escape sequence from being sent.
                 //
-                // The reference is unquoted, unfortunately, because the token may already have been
-                // spliced into a string (e.g 'tmux display-message "Copied {}"'), and it's impossible (or
-                // at least exceedingly difficult) to determine the correct quoting level.
-                //
-                // The alternative of literally splicing the text into the command is bad and it causes all
-                // kinds of harmful escaping issues that the user cannot reasonable avoid.
-                //
-                // For example, imagine some pattern matched the text "foo;rm *" and the user's command was
-                // an innocuous "echo {}". With literal splicing, we would run the command "echo foo;rm *".
-                // That's BAD. Without splicing, instead we execute "echo ${THUMB}" which does mostly the
-                // right thing regardless the contents of the text. (At worst, bash will word-separate the
-                // unquoted variable; but it won't _execute_ those words in common scenarios).
-                //
-                // Ideally user commands would just use "${THUMB}" to begin with rather than having any
-                // sort of ad-hoc string splicing here at all, and then they could specify the quoting they
-                // want, but that would break backwards compatibility.
-                self.execute_final_command(text.trim_end(), &execute_command)?;
+                // Therefore, for now we wait a little bit here for the redraw to finish.
+                std::thread::sleep(std::time::Duration::from_millis(100));
 
-                return Ok(SelectionOutcome::Executed);
+                std::io::stdout().write_all(tmux_seq.as_bytes()).unwrap();
+                std::io::stdout().flush().unwrap();
             }
+
+            let execute_command = if selection.upcase {
+                self.upcase_command.clone()
+            } else {
+                self.command.clone()
+            };
+
+            // The command we run has two arguments:
+            //  * The first arg is the (trimmed) text. This gets stored in a variable, in order to
+            //    preserve quoting and special characters.
+            //
+            //  * The second argument is the user's command, with the '{}' token replaced with an
+            //    unquoted reference to the variable containing the text.
+            //
+            // The reference is unquoted, unfortunately, because the token may already have been
+            // spliced into a string (e.g 'tmux display-message "Copied {}"'), and it's impossible (or
+            // at least exceedingly difficult) to determine the correct quoting level.
+            //
+            // The alternative of literally splicing the text into the command is bad and it causes all
+            // kinds of harmful escaping issues that the user cannot reasonable avoid.
+            //
+            // For example, imagine some pattern matched the text "foo;rm *" and the user's command was
+            // an innocuous "echo {}". With literal splicing, we would run the command "echo foo;rm *".
+            // That's BAD. Without splicing, instead we execute "echo ${THUMB}" which does mostly the
+            // right thing regardless the contents of the text. (At worst, bash will word-separate the
+            // unquoted variable; but it won't _execute_ those words in common scenarios).
+            //
+            // Ideally user commands would just use "${THUMB}" to begin with rather than having any
+            // sort of ad-hoc string splicing here at all, and then they could specify the quoting they
+            // want, but that would break backwards compatibility.
+            self.execute_final_command(selection.text.trim_end(), &execute_command)?;
+
+            return Ok(SelectionOutcome::Executed);
         }
 
         Ok(SelectionOutcome::Cancelled)
@@ -1628,7 +1702,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_selection_does_not_execute_command() {
+    fn malformed_selection_returns_parse_error() {
         let last_command_outputs = vec![];
         let mut executor = TestShell::new(last_command_outputs);
         let mut swapper = Swapper::new(
@@ -1641,10 +1715,86 @@ mod tests {
         );
 
         swapper.content = Some("not-a-selection".to_string());
-        let outcome = swapper.execute_command().unwrap();
+        let error = swapper.execute_command().unwrap_err();
+
+        let OrchestrationError::Parse { phase, message, .. } = &error else {
+            panic!("expected parse error");
+        };
 
         assert_eq!(executor.last_executed(), None);
-        assert_eq!(outcome, SelectionOutcome::Cancelled);
+        assert_eq!(*phase, "parse_selection");
+        assert!(message.contains("malformed selection line 1"));
+        assert!(error.to_string().contains("phase `parse_selection`"));
+    }
+
+    #[test]
+    fn malformed_multi_selection_returns_parse_error() {
+        let last_command_outputs = vec![];
+        let mut executor = TestShell::new(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "".to_string(),
+            "echo {}".to_string(),
+            "open {}".to_string(),
+            "multi {}".to_string(),
+            false,
+        );
+
+        swapper.content = Some("false:first\nnot-a-selection".to_string());
+        let error = swapper.execute_command().unwrap_err();
+
+        let OrchestrationError::Parse { phase, message, .. } = &error else {
+            panic!("expected parse error");
+        };
+
+        assert_eq!(executor.last_executed(), None);
+        assert_eq!(*phase, "parse_selection");
+        assert!(message.contains("malformed selection line 2"));
+    }
+
+    #[test]
+    fn selected_text_may_contain_colons() {
+        let last_command_outputs = vec!["".to_string()];
+        let mut executor = TestShell::new(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "".to_string(),
+            "echo {}".to_string(),
+            "open {}".to_string(),
+            "multi {}".to_string(),
+            false,
+        );
+
+        swapper.content = Some("false:https://example.com/a:b".to_string());
+        let outcome = swapper.execute_command().unwrap();
+
+        assert_eq!(
+            executor.last_executed().unwrap()[4],
+            "https://example.com/a:b"
+        );
+        assert_eq!(outcome, SelectionOutcome::Executed);
+    }
+
+    #[test]
+    fn multi_selection_uses_multi_command_with_space_joined_text() {
+        let last_command_outputs = vec!["".to_string()];
+        let mut executor = TestShell::new(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "".to_string(),
+            "echo {}".to_string(),
+            "open {}".to_string(),
+            "multi {}".to_string(),
+            false,
+        );
+
+        swapper.content = Some("false:first\ntrue:https://example.com/a:b".to_string());
+        let outcome = swapper.execute_command().unwrap();
+        let executed = executor.last_executed().unwrap();
+
+        assert_eq!(executed[4], "first https://example.com/a:b");
+        assert_eq!(executed[5], "multi ${THUMB}");
+        assert_eq!(outcome, SelectionOutcome::Executed);
     }
 
     #[test]
