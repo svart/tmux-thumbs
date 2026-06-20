@@ -20,7 +20,7 @@ impl ColorSpec {
     pub fn parse(color_name: &str) -> Result<ColorSpec, ColorParseError> {
         lazy_static! {
             static ref RGB: Regex =
-                Regex::new(r"#([[:xdigit:]]{2})([[:xdigit:]]{2})([[:xdigit:]]{2})").unwrap();
+                Regex::new(r"^#([[:xdigit:]]{2})([[:xdigit:]]{2})([[:xdigit:]]{2})$").unwrap();
         }
 
         if let Some(captures) = RGB.captures(color_name) {
@@ -114,6 +114,15 @@ mod tests {
         let error = ColorSpec::parse("wat").unwrap_err();
 
         assert_eq!(error.to_string(), "Unknown color: wat");
+    }
+
+    #[test]
+    fn reject_embedded_rgb_color_spec() {
+        for value in ["foo#1b1cbfbar", "#1b1cbfbar", "foo#1b1cbf"] {
+            let error = ColorSpec::parse(value).unwrap_err();
+
+            assert_eq!(error.to_string(), format!("Unknown color: {}", value));
+        }
     }
 
     #[test]
