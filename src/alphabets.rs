@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::fmt;
 
 const ALPHABETS: [(&str, &str); 22] = [
     ("numeric", "1234567890"),
@@ -28,6 +28,19 @@ const ALPHABETS: [(&str, &str); 22] = [
 pub struct Alphabet<'a> {
     letters: &'a str,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlphabetParseError {
+    name: String,
+}
+
+impl fmt::Display for AlphabetParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Unknown alphabet: {}", self.name)
+    }
+}
+
+impl std::error::Error for AlphabetParseError {}
 
 impl<'a> Alphabet<'a> {
     fn new(letters: &'a str) -> Alphabet<'a> {
@@ -69,13 +82,30 @@ impl<'a> Alphabet<'a> {
 }
 
 pub fn get_alphabet(alphabet_name: &str) -> Alphabet<'_> {
-    let alphabets: HashMap<&str, &str> = ALPHABETS.iter().cloned().collect();
-    let letters = alphabets
-        .get(alphabet_name)
-        .copied()
-        .unwrap_or_else(|| panic!("Unknown alphabet: {}", alphabet_name));
+    let letters = alphabet_letters(alphabet_name).unwrap_or_else(|| {
+        panic!(
+            "{}",
+            AlphabetParseError {
+                name: alphabet_name.to_string()
+            }
+        )
+    });
 
     Alphabet::new(letters)
+}
+
+pub fn validate_alphabet(alphabet_name: &str) -> Result<(), AlphabetParseError> {
+    alphabet_letters(alphabet_name)
+        .map(|_| ())
+        .ok_or_else(|| AlphabetParseError {
+            name: alphabet_name.to_string(),
+        })
+}
+
+fn alphabet_letters(alphabet_name: &str) -> Option<&'static str> {
+    ALPHABETS
+        .iter()
+        .find_map(|(name, letters)| (*name == alphabet_name).then_some(*letters))
 }
 
 #[cfg(test)]
@@ -108,5 +138,17 @@ mod tests {
         let alphabet = Alphabet::new("ab");
         let hints = alphabet.hints(8);
         assert_eq!(hints, ["aa", "ab", "ba", "bb"]);
+    }
+
+    #[test]
+    fn validate_known_alphabet() {
+        assert!(validate_alphabet("qwerty").is_ok());
+    }
+
+    #[test]
+    fn reject_unknown_alphabet() {
+        let error = validate_alphabet("wat").unwrap_err();
+
+        assert_eq!(error.to_string(), "Unknown alphabet: wat");
     }
 }

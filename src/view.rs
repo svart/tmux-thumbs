@@ -1,5 +1,6 @@
 use super::*;
 use std::char;
+use std::fmt;
 use std::io::{stdout, Read, Write};
 use termion::async_stdin;
 use termion::event::Key;
@@ -15,7 +16,7 @@ pub struct View<'a> {
     skip: usize,
     multi: bool,
     contrast: bool,
-    position: &'a str,
+    position: HintPosition,
     matches: Vec<state::Match<'a>>,
     select_foreground_color: Box<dyn color::Color>,
     select_background_color: Box<dyn color::Color>,
@@ -28,17 +29,61 @@ pub struct View<'a> {
     chosen: Vec<(String, bool)>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HintPosition {
+    Left,
+    Right,
+    OffLeft,
+    OffRight,
+}
+
+impl HintPosition {
+    pub fn parse(value: &str) -> Result<HintPosition, HintPositionParseError> {
+        match value {
+            "left" => Ok(HintPosition::Left),
+            "right" => Ok(HintPosition::Right),
+            "off_left" => Ok(HintPosition::OffLeft),
+            "off_right" => Ok(HintPosition::OffRight),
+            _ => Err(HintPositionParseError {
+                value: value.to_string(),
+            }),
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HintPosition::Left => "left",
+            HintPosition::Right => "right",
+            HintPosition::OffLeft => "off_left",
+            HintPosition::OffRight => "off_right",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HintPositionParseError {
+    value: String,
+}
+
+impl fmt::Display for HintPositionParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Unknown hint position: {}", self.value)
+    }
+}
+
+impl std::error::Error for HintPositionParseError {}
+
 enum CaptureEvent {
     Exit,
     Hint,
 }
 
-pub struct ViewOptions<'a> {
+pub struct ViewOptions {
     pub multi: bool,
     pub reverse: bool,
     pub unique: bool,
     pub contrast: bool,
-    pub position: &'a str,
+    pub position: HintPosition,
 }
 
 pub struct ViewColors {
@@ -55,7 +100,7 @@ pub struct ViewColors {
 impl<'a> View<'a> {
     pub fn new(
         state: &'a mut state::State<'a>,
-        options: ViewOptions<'a>,
+        options: ViewOptions,
         colors: ViewColors,
     ) -> View<'a> {
         let matches = state.matches(options.reverse, options.unique);
@@ -158,14 +203,16 @@ impl<'a> View<'a> {
 
             if let Some(ref hint) = mat.hint {
                 let extra_position = match self.position {
-                    "right" => text.width_cjk() - hint.len(),
-                    "off_left" => 0 - hint.len() - if self.contrast { 2 } else { 0 },
-                    "off_right" => text.width_cjk(),
-                    _ => 0,
+                    HintPosition::Left => 0,
+                    HintPosition::Right => text.width_cjk() as i16 - hint.len() as i16,
+                    HintPosition::OffLeft => {
+                        -(hint.len() as i16) - if self.contrast { 2 } else { 0 }
+                    }
+                    HintPosition::OffRight => text.width_cjk() as i16,
                 };
 
                 let text = self.make_hint_text(hint.as_str());
-                let final_position = std::cmp::max(offset as i16 + extra_position as i16, 0);
+                let final_position = std::cmp::max(offset as i16 + extra_position, 0);
 
                 print!(
                     "{goto}{background}{foregroud}{text}{resetf}{resetb}",
@@ -361,7 +408,7 @@ mod tests {
             skip: 0,
             multi: false,
             contrast: false,
-            position: "",
+            position: HintPosition::Left,
             matches: vec![],
             select_foreground_color: colors::get_color("default"),
             select_background_color: colors::get_color("default"),
@@ -380,5 +427,27 @@ mod tests {
         view.contrast = true;
         let result = view.make_hint_text("a");
         assert_eq!(result, "[a]".to_string());
+    }
+
+    #[test]
+    fn hint_position_parse_valid_values() {
+        assert_eq!(HintPosition::parse("left").unwrap(), HintPosition::Left);
+        assert_eq!(HintPosition::parse("right").unwrap(), HintPosition::Right);
+        assert_eq!(
+            HintPosition::parse("off_left").unwrap(),
+            HintPosition::OffLeft
+        );
+        assert_eq!(
+            HintPosition::parse("off_right").unwrap(),
+            HintPosition::OffRight
+        );
+        assert_eq!(HintPosition::OffRight.as_str(), "off_right");
+    }
+
+    #[test]
+    fn hint_position_rejects_invalid_value() {
+        let error = HintPosition::parse("center").unwrap_err();
+
+        assert_eq!(error.to_string(), "Unknown hint position: center");
     }
 }

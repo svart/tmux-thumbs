@@ -500,23 +500,23 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Add a `HintPosition` enum with `Left`, `Right`, `OffLeft`, and `OffRight`.
-- [ ] Parse `--position` and `@thumbs-position` into `HintPosition` once.
-- [ ] Add a `ColorSpec` or `ParsedColor` wrapper if helpful, while preserving termion rendering behavior.
-- [ ] Change alphabet lookup to return `Result<Alphabet, Error>` or validate alphabet names during config parsing.
-- [ ] Replace string comparisons in rendering with enum matches.
-- [ ] Add tests for invalid position, invalid color, invalid alphabet, and all valid positions.
+- [x] Add a `HintPosition` enum with `Left`, `Right`, `OffLeft`, and `OffRight`.
+- [x] Parse `--position` and `@thumbs-position` into `HintPosition` once.
+- [x] Add a `ColorSpec` or `ParsedColor` wrapper if helpful, while preserving termion rendering behavior.
+- [x] Change alphabet lookup to return `Result<Alphabet, Error>` or validate alphabet names during config parsing.
+- [x] Replace string comparisons in rendering with enum matches.
+- [x] Add tests for invalid position, invalid color, invalid alphabet, and all valid positions.
 
 **Acceptance criteria:**
 
-- [ ] `ViewOptions.position` is not a raw string.
-- [ ] User input errors are handled at parse time.
-- [ ] Rendering cannot receive an unknown hint position.
+- [x] `ViewOptions.position` is not a raw string.
+- [x] User input errors are handled at parse time.
+- [x] Rendering cannot receive an unknown hint position.
 
 **Verification:**
 
-- [ ] Run focused tests in `src/view.rs`, `src/colors.rs`, and `src/alphabets.rs`.
-- [ ] Run `cargo test --verbose`.
+- [x] Run focused tests in `src/view.rs`, `src/colors.rs`, and `src/alphabets.rs`.
+- [x] Run `cargo test --verbose`.
 
 **Dependencies:** Task 2.2.
 

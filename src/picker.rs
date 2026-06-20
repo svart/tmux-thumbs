@@ -1,4 +1,4 @@
-use crate::{colors, state, view};
+use crate::{alphabets, colors, state, view};
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use regex::Regex;
 use std::fmt;
@@ -42,14 +42,14 @@ impl From<io::Error> for PickerError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ThumbsColorOptions {
-    foreground: String,
-    background: String,
-    hint_foreground: String,
-    hint_background: String,
-    select_foreground: String,
-    select_background: String,
-    multi_foreground: String,
-    multi_background: String,
+    foreground: colors::ColorSpec,
+    background: colors::ColorSpec,
+    hint_foreground: colors::ColorSpec,
+    hint_background: colors::ColorSpec,
+    select_foreground: colors::ColorSpec,
+    select_background: colors::ColorSpec,
+    multi_foreground: colors::ColorSpec,
+    multi_background: colors::ColorSpec,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,38 +61,42 @@ struct ThumbsOptions {
     reverse: bool,
     unique: bool,
     contrast: bool,
-    position: String,
+    position: view::HintPosition,
     regexp: Vec<String>,
     target: Option<String>,
 }
 
 impl ThumbsOptions {
     fn from_matches(args: &ArgMatches) -> PickerResult<ThumbsOptions> {
+        let alphabet = required_string(args, "alphabet")?.to_string();
         let regexp = args
             .get_many::<String>("regexp")
             .map(|items| items.cloned().collect::<Vec<_>>())
             .unwrap_or_default();
 
+        alphabets::validate_alphabet(&alphabet)
+            .map_err(|error| PickerError::Configuration(error.to_string()))?;
         validate_custom_regexps(&regexp)?;
 
         Ok(ThumbsOptions {
-            alphabet: required_string(args, "alphabet")?.to_string(),
+            alphabet,
             format: required_string(args, "format")?.to_string(),
             colors: ThumbsColorOptions {
-                foreground: required_string(args, "foreground_color")?.to_string(),
-                background: required_string(args, "background_color")?.to_string(),
-                hint_foreground: required_string(args, "hint_foreground_color")?.to_string(),
-                hint_background: required_string(args, "hint_background_color")?.to_string(),
-                select_foreground: required_string(args, "select_foreground_color")?.to_string(),
-                select_background: required_string(args, "select_background_color")?.to_string(),
-                multi_foreground: required_string(args, "multi_foreground_color")?.to_string(),
-                multi_background: required_string(args, "multi_background_color")?.to_string(),
+                foreground: parse_color_arg(args, "foreground_color")?,
+                background: parse_color_arg(args, "background_color")?,
+                hint_foreground: parse_color_arg(args, "hint_foreground_color")?,
+                hint_background: parse_color_arg(args, "hint_background_color")?,
+                select_foreground: parse_color_arg(args, "select_foreground_color")?,
+                select_background: parse_color_arg(args, "select_background_color")?,
+                multi_foreground: parse_color_arg(args, "multi_foreground_color")?,
+                multi_background: parse_color_arg(args, "multi_background_color")?,
             },
             multi: args.get_flag("multi"),
             reverse: args.get_flag("reverse"),
             unique: args.get_flag("unique"),
             contrast: args.get_flag("contrast"),
-            position: required_string(args, "position")?.to_string(),
+            position: view::HintPosition::parse(required_string(args, "position")?)
+                .map_err(|error| PickerError::Configuration(error.to_string()))?,
             regexp,
             target: args.get_one::<String>("target").cloned(),
         })
@@ -103,6 +107,11 @@ fn required_string<'a>(args: &'a ArgMatches, name: &'static str) -> PickerResult
     args.get_one::<String>(name)
         .map(String::as_str)
         .ok_or_else(|| PickerError::Configuration(format!("missing required option `{}`", name)))
+}
+
+fn parse_color_arg(args: &ArgMatches, name: &'static str) -> PickerResult<colors::ColorSpec> {
+    colors::ColorSpec::parse(required_string(args, name)?)
+        .map_err(|error| PickerError::Configuration(error.to_string()))
 }
 
 fn validate_custom_regexps(regexps: &[String]) -> PickerResult<()> {
@@ -277,17 +286,17 @@ fn run_with_options(options: ThumbsOptions) -> PickerResult<bool> {
             reverse: options.reverse,
             unique: options.unique,
             contrast: options.contrast,
-            position: options.position.as_str(),
+            position: options.position,
         };
         let view_colors = view::ViewColors {
-            select_foreground_color: colors::get_color(options.colors.select_foreground.as_str()),
-            select_background_color: colors::get_color(options.colors.select_background.as_str()),
-            multi_foreground_color: colors::get_color(options.colors.multi_foreground.as_str()),
-            multi_background_color: colors::get_color(options.colors.multi_background.as_str()),
-            foreground_color: colors::get_color(options.colors.foreground.as_str()),
-            background_color: colors::get_color(options.colors.background.as_str()),
-            hint_foreground_color: colors::get_color(options.colors.hint_foreground.as_str()),
-            hint_background_color: colors::get_color(options.colors.hint_background.as_str()),
+            select_foreground_color: options.colors.select_foreground.to_color(),
+            select_background_color: options.colors.select_background.to_color(),
+            multi_foreground_color: options.colors.multi_foreground.to_color(),
+            multi_background_color: options.colors.multi_background.to_color(),
+            foreground_color: options.colors.foreground.to_color(),
+            background_color: options.colors.background.to_color(),
+            hint_foreground_color: options.colors.hint_foreground.to_color(),
+            hint_background_color: options.colors.hint_background.to_color(),
         };
 
         let mut viewbox = view::View::new(&mut state, view_options, view_colors);
@@ -339,15 +348,15 @@ mod tests {
 
         assert_eq!(options.alphabet, "qwerty");
         assert_eq!(options.format, "%H");
-        assert_eq!(options.position, "left");
-        assert_eq!(options.colors.foreground, "green");
-        assert_eq!(options.colors.background, "black");
-        assert_eq!(options.colors.hint_foreground, "yellow");
-        assert_eq!(options.colors.hint_background, "black");
-        assert_eq!(options.colors.select_foreground, "blue");
-        assert_eq!(options.colors.select_background, "black");
-        assert_eq!(options.colors.multi_foreground, "yellow");
-        assert_eq!(options.colors.multi_background, "black");
+        assert_eq!(options.position, view::HintPosition::Left);
+        assert_eq!(options.colors.foreground, colors::ColorSpec::Green);
+        assert_eq!(options.colors.background, colors::ColorSpec::Black);
+        assert_eq!(options.colors.hint_foreground, colors::ColorSpec::Yellow);
+        assert_eq!(options.colors.hint_background, colors::ColorSpec::Black);
+        assert_eq!(options.colors.select_foreground, colors::ColorSpec::Blue);
+        assert_eq!(options.colors.select_background, colors::ColorSpec::Black);
+        assert_eq!(options.colors.multi_foreground, colors::ColorSpec::Yellow);
+        assert_eq!(options.colors.multi_background, colors::ColorSpec::Black);
         assert!(!options.multi);
         assert!(!options.reverse);
         assert!(!options.unique);
@@ -383,7 +392,7 @@ mod tests {
 
         assert_eq!(options.alphabet, "numeric");
         assert_eq!(options.format, "%U:%H");
-        assert_eq!(options.position, "right");
+        assert_eq!(options.position, view::HintPosition::Right);
         assert!(options.multi);
         assert!(options.reverse);
         assert!(options.unique);
@@ -400,5 +409,35 @@ mod tests {
         let error = ThumbsOptions::from_matches(&matches).unwrap_err();
 
         assert!(error.to_string().contains("Invalid custom regexp"));
+    }
+
+    #[test]
+    fn thumbs_options_reject_invalid_position() {
+        let matches = app()
+            .try_get_matches_from(["thumbs", "--position", "center"])
+            .unwrap();
+        let error = ThumbsOptions::from_matches(&matches).unwrap_err();
+
+        assert_eq!(error.to_string(), "Unknown hint position: center");
+    }
+
+    #[test]
+    fn thumbs_options_reject_invalid_color() {
+        let matches = app()
+            .try_get_matches_from(["thumbs", "--fg-color", "wat"])
+            .unwrap();
+        let error = ThumbsOptions::from_matches(&matches).unwrap_err();
+
+        assert_eq!(error.to_string(), "Unknown color: wat");
+    }
+
+    #[test]
+    fn thumbs_options_reject_invalid_alphabet() {
+        let matches = app()
+            .try_get_matches_from(["thumbs", "--alphabet", "wat"])
+            .unwrap();
+        let error = ThumbsOptions::from_matches(&matches).unwrap_err();
+
+        assert_eq!(error.to_string(), "Unknown alphabet: wat");
     }
 }

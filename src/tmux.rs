@@ -1,3 +1,4 @@
+use crate::{alphabets, colors, view};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 use regex::Regex;
@@ -370,7 +371,7 @@ struct PickerArgs {
 }
 
 impl PickerArgs {
-    fn from_tmux_options(options: &str) -> PickerArgs {
+    fn from_tmux_options(options: &str) -> Result<PickerArgs, String> {
         let pattern = Regex::new(r#"^@thumbs-([\w\-0-9]+)\s+(.+)$"#).unwrap();
         let mut args = Vec::new();
 
@@ -395,16 +396,20 @@ impl PickerArgs {
             }
 
             if is_string_picker_arg(name) {
+                let value = validate_picker_value(name, value)?;
                 args.push(PickerArg::Value {
                     name: name.to_string(),
-                    value: value.to_string(),
+                    value,
                 });
             } else if name.starts_with("regexp") {
-                args.push(PickerArg::Regexp(value.replace("\\\\", "\\")));
+                let regexp = value.replace("\\\\", "\\");
+                Regex::new(&regexp)
+                    .map_err(|error| format!("Invalid custom regexp `{}`: {}", regexp, error))?;
+                args.push(PickerArg::Regexp(regexp));
             }
         }
 
-        PickerArgs { args }
+        Ok(PickerArgs { args })
     }
 
     fn render_shell_args(&self) -> Vec<String> {
@@ -424,9 +429,11 @@ fn is_boolean_picker_arg(name: &str) -> bool {
 }
 
 fn is_string_picker_arg(name: &str) -> bool {
+    ["alphabet", "position"].contains(&name) || is_color_picker_arg(name)
+}
+
+fn is_color_picker_arg(name: &str) -> bool {
     [
-        "alphabet",
-        "position",
         "fg-color",
         "bg-color",
         "hint-bg-color",
@@ -437,6 +444,23 @@ fn is_string_picker_arg(name: &str) -> bool {
         "multi-bg-color",
     ]
     .contains(&name)
+}
+
+fn validate_picker_value(name: &str, value: &str) -> Result<String, String> {
+    match name {
+        "alphabet" => {
+            alphabets::validate_alphabet(value).map_err(|error| error.to_string())?;
+            Ok(value.to_string())
+        }
+        "position" => view::HintPosition::parse(value)
+            .map(|position| position.as_str().to_string())
+            .map_err(|error| error.to_string()),
+        name if is_color_picker_arg(name) => {
+            colors::ColorSpec::parse(value).map_err(|error| error.to_string())?;
+            Ok(value.to_string())
+        }
+        _ => Ok(value.to_string()),
+    }
 }
 
 fn is_true_tmux_value(value: &str) -> bool {
@@ -589,7 +613,11 @@ impl<'a> Swapper<'a> {
             .execute(params)
             .map_err(|error| self.command_error("start_picker", error))?
             .stdout;
-        let args = PickerArgs::from_tmux_options(&options).render_shell_args();
+        let args = PickerArgs::from_tmux_options(&options)
+            .map_err(|message| {
+                OrchestrationError::parse("parse_picker_options", self.run_context(), message)
+            })?
+            .render_shell_args();
 
         let active_pane_id = shell_quote(active_pane.id.as_str());
 
@@ -1229,6 +1257,7 @@ mod tests {
         let args = PickerArgs::from_tmux_options(
             "@thumbs-reverse enabled\n@thumbs-unique 1\n@thumbs-contrast true\n",
         )
+        .unwrap()
         .render_shell_args();
 
         assert_eq!(args, ["--reverse", "--unique", "--contrast"]);
@@ -1239,6 +1268,7 @@ mod tests {
         let args = PickerArgs::from_tmux_options(
             "@thumbs-reverse 0\n@thumbs-unique disabled\n@thumbs-contrast \"\"\n",
         )
+        .unwrap()
         .render_shell_args();
 
         assert!(args.is_empty());
@@ -1247,19 +1277,64 @@ mod tests {
     #[test]
     fn picker_args_parse_quoted_strings_and_regex_backslashes() {
         let args = PickerArgs::from_tmux_options(
-            "@thumbs-fg-color \"bright green\"\n@thumbs-regexp-1 \"foo\\\\d+'bar\"\n",
+            "@thumbs-fg-color green\n@thumbs-regexp-1 \"foo\\\\d+'bar\"\n",
         )
+        .unwrap()
+        .render_shell_args();
+
+        assert_eq!(
+            args,
+            ["--fg-color", "'green'", "--regexp", "'foo\\d+'\\''bar'",]
+        );
+    }
+
+    #[test]
+    fn picker_args_validate_typed_values() {
+        let args = PickerArgs::from_tmux_options(
+            "@thumbs-alphabet numeric\n@thumbs-position off_right\n@thumbs-fg-color #1b1cbf\n",
+        )
+        .unwrap()
         .render_shell_args();
 
         assert_eq!(
             args,
             [
+                "--alphabet",
+                "'numeric'",
+                "--position",
+                "'off_right'",
                 "--fg-color",
-                "'bright green'",
-                "--regexp",
-                "'foo\\d+'\\''bar'",
+                "'#1b1cbf'",
             ]
         );
+    }
+
+    #[test]
+    fn picker_args_reject_invalid_position() {
+        let error = PickerArgs::from_tmux_options("@thumbs-position center\n").unwrap_err();
+
+        assert_eq!(error, "Unknown hint position: center");
+    }
+
+    #[test]
+    fn picker_args_reject_invalid_color() {
+        let error = PickerArgs::from_tmux_options("@thumbs-fg-color wat\n").unwrap_err();
+
+        assert_eq!(error, "Unknown color: wat");
+    }
+
+    #[test]
+    fn picker_args_reject_invalid_alphabet() {
+        let error = PickerArgs::from_tmux_options("@thumbs-alphabet wat\n").unwrap_err();
+
+        assert_eq!(error, "Unknown alphabet: wat");
+    }
+
+    #[test]
+    fn picker_args_reject_invalid_regexp() {
+        let error = PickerArgs::from_tmux_options("@thumbs-regexp-1 [\n").unwrap_err();
+
+        assert!(error.contains("Invalid custom regexp"));
     }
 
     #[test]
@@ -1679,7 +1754,7 @@ mod tests {
         let last_command_outputs = vec![
             "".to_string(),
             "%100".to_string(),
-            "@thumbs-fg-color \"bright green\"\n".to_string(),
+            "@thumbs-regexp-1 \"bright green\"\n".to_string(),
             "%98\t0\t8\t0\t0\tactive\n".to_string(),
         ];
         let mut executor = TestShell::new(last_command_outputs);
@@ -1700,7 +1775,7 @@ mod tests {
             .expect("thumbs window should be created");
         let pane_command = new_window_command.last().unwrap();
 
-        assert!(pane_command.contains("--fg-color 'bright green'"));
+        assert!(pane_command.contains("--regexp 'bright green'"));
     }
 
     #[test]
@@ -1708,7 +1783,8 @@ mod tests {
         let last_command_outputs = vec![
             "".to_string(),
             "%100".to_string(),
-            "@thumbs-fg-color \"quote'color\"\n@thumbs-bg-color bright\"blue\n@thumbs-hint-fg-color \"slash\\color\"\n@thumbs-regexp-1 \"foo'bar\"\n".to_string(),
+            "@thumbs-fg-color #1b1cbf\n@thumbs-bg-color blue\n@thumbs-regexp-1 \"foo'bar\"\n"
+                .to_string(),
             "%98\t0\t8\t0\t0\tactive\n".to_string(),
         ];
         let mut executor = TestShell::new(last_command_outputs);
@@ -1729,9 +1805,8 @@ mod tests {
             .expect("thumbs window should be created");
         let pane_command = new_window_command.last().unwrap();
 
-        assert!(pane_command.contains("--fg-color 'quote'\\''color'"));
-        assert!(pane_command.contains("--bg-color 'bright\"blue'"));
-        assert!(pane_command.contains("--hint-fg-color 'slash\\color'"));
+        assert!(pane_command.contains("--fg-color '#1b1cbf'"));
+        assert!(pane_command.contains("--bg-color 'blue'"));
         assert!(pane_command.contains("--regexp 'foo'\\''bar'"));
     }
 
