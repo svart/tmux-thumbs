@@ -758,15 +758,15 @@ Swapper::run() -> Result<RunOutcome>
 
 **Checklist:**
 
-- [ ] `cargo fmt --all -- --check` passes.
-- [ ] `cargo build --verbose` passes.
-- [ ] `cargo test --verbose` passes.
-- [ ] `cargo build --release` passes if runtime wrapper changed.
-- [ ] Focused state tests pass if matching changed.
-- [ ] Focused swapper tests pass if orchestration changed.
+- [x] `cargo fmt --all -- --check` passes.
+- [x] `cargo build --verbose` passes.
+- [x] `cargo test --verbose` passes.
+- [x] `cargo build --release` passes if runtime wrapper changed.
+- [x] Focused state tests pass if matching changed.
+- [x] Focused tmux tests pass if orchestration changed.
 - [ ] Manual tmux smoke test passes if UI, wrapper, command execution, pane orchestration, or OSC52 changed.
-- [ ] Public flags and tmux option names are unchanged.
-- [ ] Invalid input produces controlled errors rather than panics where the task touched parsing.
+- [x] Public flags and tmux option names are unchanged.
+- [x] Invalid input produces controlled errors rather than panics where the task touched parsing.
 
 ---
 
@@ -794,17 +794,17 @@ Use the narrowest useful checks during implementation, then run the broader chec
 
 | Change area | Focused verification | Broader verification |
 | --- | --- | --- |
-| Regex matching or hint assignment | `cargo test --bin thumbs state::tests::priority -- --exact` | `cargo test --bin thumbs --verbose` |
-| Tmux command quoting or orchestration | `cargo test --bin tmux-thumbs tests::quoted_execution -- --exact` | `cargo test --bin tmux-thumbs --verbose` |
-| Pane capture/start ordering | `cargo test --bin tmux-thumbs tests::waits_for_capture_before_swapping_split_panes -- --exact` | `cargo test --bin tmux-thumbs --verbose` |
-| Colors or alphabets | Focused module tests in `src/colors.rs` or `src/alphabets.rs` | `cargo test --bin thumbs --verbose` |
+| Regex matching or hint assignment | `cargo test --lib state::tests::priority -- --exact` | `cargo test --verbose` |
+| Tmux command quoting or orchestration | `cargo test --lib tmux::tests::quoted_execution -- --exact` | `cargo test --lib tmux::tests` |
+| Pane capture/start ordering | `cargo test --lib tmux::tests::waits_for_capture_before_swapping_split_panes -- --exact` | `cargo test --lib tmux::tests` |
+| Colors or alphabets | `cargo test --lib colors::tests` or `cargo test --lib alphabets::tests` | `cargo test --verbose` |
 | UI rendering or input | Focused `view` tests plus manual smoke where feasible | `cargo test --verbose` and tmux smoke test |
 | Shell wrapper | `cargo build --release` before invoking wrapper | Manual tmux smoke test |
 | Docs only | Read changed docs for stale references | No tests required unless code changed |
 
 # Manual Tmux Smoke Test
 
-Run this after any change touching `src/swapper.rs`, `src/view.rs`, shell wrappers, command execution, or OSC52.
+Run this after any change touching `src/tmux.rs`, `src/view.rs`, shell wrappers, command execution, or OSC52.
 
 ```text
 1. Build release binaries with `cargo build --release`.
