@@ -406,7 +406,7 @@ Swapper::run() -> Result<RunOutcome>
 **Verification:**
 
 - [x] Run `cargo build --release` before invoking wrapper manually.
-- [ ] In tmux, source `tmux-thumbs.tmux` and run `thumbs-pick`.
+- [x] In tmux, source `tmux-thumbs.tmux` and run `thumbs-pick`.
 - [ ] Temporarily move one release binary aside in a controlled test and verify installer/update path.
 
 **Dependencies:** Task 1.3. If wrapper debug behavior changes, also depend on Task 1.4.
@@ -824,12 +824,12 @@ Run this after any change touching `src/tmux.rs`, `src/view.rs`, shell wrappers,
 
 - [x] Part 1 checkpoint is complete.
 - [x] Part 2 checkpoint is complete.
-- [ ] No fixed `/tmp/thumbs-last` handoff remains.
-- [ ] Orchestration errors are observable and cancellation is explicit.
-- [ ] `Swapper` no longer depends on public methods being called in a fragile order.
-- [ ] Generated shell command construction is centralized and tested for quoting edge cases.
-- [ ] User-facing inputs are parsed into typed config before use.
-- [ ] Rendering logic is testable without a real terminal where practical.
-- [ ] `cargo fmt --all -- --check`, `cargo build --verbose`, and `cargo test --verbose` pass.
+- [x] No fixed `/tmp/thumbs-last` handoff remains.
+- [x] Orchestration errors are observable and cancellation is explicit.
+- [x] `Swapper` no longer depends on public methods being called in a fragile order.
+- [x] Generated shell command construction is centralized and tested for quoting edge cases.
+- [x] User-facing inputs are parsed into typed config before use.
+- [x] Rendering logic is testable without a real terminal where practical.
+- [x] `cargo fmt --all -- --check`, `cargo build --verbose`, and `cargo test --verbose` pass.
 - [x] Runtime flow has been manually smoke-tested in tmux after a release build.
-- [ ] README and `AGENTS.md` match the final implementation.
+- [x] README and `AGENTS.md` match the final implementation.
