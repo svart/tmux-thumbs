@@ -332,22 +332,22 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Add an `EXIT` trap in the generated pane script to always signal the finished wait-for channel.
-- [ ] Ensure the trap does not mask the separate capture/start synchronization ordering.
-- [ ] Make result-file absence after finished signal mean cancellation or picker failure, depending on exit status if available.
-- [ ] Add tests that the generated script contains the trap before risky commands.
-- [ ] Add tests that the finished signal still happens after normal picker completion.
+- [x] Add an `EXIT` trap in the generated pane script to always signal the finished wait-for channel.
+- [x] Ensure the trap does not mask the separate capture/start synchronization ordering.
+- [x] Make result-file absence after finished signal mean cancellation or picker failure, depending on exit status if available.
+- [x] Add tests that the generated script contains the trap before risky commands.
+- [x] Add tests that the finished signal still happens after normal picker completion.
 
 **Acceptance criteria:**
 
-- [ ] A generated script failure cannot leave `tmux-thumbs` waiting forever on the finished signal.
-- [ ] Existing split-pane capture ordering is preserved.
-- [ ] Cancellation remains non-disruptive.
+- [x] A generated script failure cannot leave `tmux-thumbs` waiting forever on the finished signal.
+- [x] Existing split-pane capture ordering is preserved.
+- [x] Cancellation remains non-disruptive.
 
 **Verification:**
 
-- [ ] Run `cargo test --bin tmux-thumbs tests::waits_for_capture_before_swapping_split_panes -- --exact`.
-- [ ] Run `cargo test --bin tmux-thumbs --verbose`.
+- [x] Run `cargo test --bin tmux-thumbs tests::waits_for_capture_before_swapping_split_panes -- --exact`.
+- [x] Run `cargo test --bin tmux-thumbs --verbose`.
 
 **Dependencies:** Task 1.7.
 

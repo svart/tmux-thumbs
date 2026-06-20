@@ -579,7 +579,12 @@ impl<'a> Swapper<'a> {
             shell_quote(self.result_path.as_str()),
             args.join(" ")
         );
+        let finished_signal_command = format!(
+            "tmux wait-for -S {}",
+            shell_quote(self.signals.finished.as_str())
+        );
         let mut pane_script = vec![
+            format!("trap {} EXIT", shell_quote(&finished_signal_command)),
             format!("capture=\"$({})\"", capture_command),
             format!(
                 "tmux wait-for -S {}",
@@ -594,10 +599,7 @@ impl<'a> Swapper<'a> {
             pane_script.push(format!("tmux resize-pane -t {} -Z", active_pane_id));
         }
 
-        pane_script.push(format!(
-            "tmux wait-for -S {}",
-            shell_quote(self.signals.finished.as_str())
-        ));
+        pane_script.push(finished_signal_command);
 
         let pane_command = pane_script.join("; ");
 
@@ -1259,6 +1261,9 @@ mod tests {
             .expect("test setup should create a thumbs window");
         let pane_command = new_window_command.last().unwrap();
 
+        let trap_index = pane_command
+            .find("trap '")
+            .expect("script should install EXIT trap");
         let capture_index = pane_command
             .find("capture=\"$(tmux capture-pane -J -t '%98' -p | tail -n 8)\"")
             .unwrap();
@@ -1269,9 +1274,10 @@ mod tests {
         let thumbs_index = pane_command.find("/target/release/thumbs").unwrap();
         let restore_index = pane_command.find("tmux swap-pane -t '%98'").unwrap();
         let finished_signal_index = pane_command
-            .find("tmux wait-for -S 'thumbs-finished-")
+            .rfind("tmux wait-for -S 'thumbs-finished-")
             .unwrap();
 
+        assert!(trap_index < capture_index);
         assert!(capture_index < capture_signal_index);
         assert!(capture_signal_index < start_wait_index);
         assert!(start_wait_index < thumbs_index);
