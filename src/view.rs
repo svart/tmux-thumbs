@@ -513,7 +513,7 @@ mod tests {
 
     impl Write for FailingWriter {
         fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
-            Err(io::Error::new(io::ErrorKind::Other, "write failed"))
+            Err(io::Error::other("write failed"))
         }
 
         fn flush(&mut self) -> io::Result<()> {
@@ -529,7 +529,7 @@ mod tests {
         }
 
         fn flush(&mut self) -> io::Result<()> {
-            Err(io::Error::new(io::ErrorKind::Other, "flush failed"))
+            Err(io::Error::other("flush failed"))
         }
     }
 
@@ -537,7 +537,7 @@ mod tests {
 
     impl Read for FailingReader {
         fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
-            Err(io::Error::new(io::ErrorKind::Other, "read failed"))
+            Err(io::Error::other("read failed"))
         }
     }
 
