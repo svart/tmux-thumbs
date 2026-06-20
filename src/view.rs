@@ -78,6 +78,19 @@ enum CaptureEvent {
     Hint,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyOutcome {
+    Continue,
+    Exit,
+    Hint,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct InputMatch<'a> {
+    text: &'a str,
+    hint: Option<&'a str>,
+}
+
 pub struct ViewOptions {
     pub multi: bool,
     pub reverse: bool,
@@ -130,15 +143,11 @@ impl<'a> View<'a> {
     }
 
     pub fn prev(&mut self) {
-        if self.skip > 0 {
-            self.skip -= 1;
-        }
+        self.skip = previous_index(self.skip);
     }
 
     pub fn next(&mut self) {
-        if self.skip < self.matches.len().saturating_sub(1) {
-            self.skip += 1;
-        }
+        self.skip = next_index(self.skip, self.matches.len());
     }
 
     fn make_hint_text(&self, hint: &str) -> String {
@@ -252,13 +261,19 @@ impl<'a> View<'a> {
         }
 
         let mut typed_hint: String = "".to_owned();
-        let longest_hint = self
+        let input_matches = self
             .matches
             .iter()
-            .filter_map(|m| m.hint.clone())
-            .max_by(|x, y| x.len().cmp(&y.len()))
-            .unwrap()
-            .clone();
+            .map(|mat| InputMatch {
+                text: mat.text,
+                hint: mat.hint.as_deref(),
+            })
+            .collect::<Vec<_>>();
+        let longest_hint_len = input_matches
+            .iter()
+            .filter_map(|mat| mat.hint.map(str::len))
+            .max()
+            .expect("matches must have hints");
 
         self.render(stdout, &typed_hint);
 
@@ -267,93 +282,18 @@ impl<'a> View<'a> {
                 Some(key) => {
                     match key {
                         Ok(key) => {
-                            match key {
-                                Key::Esc => {
-                                    if self.multi && !typed_hint.is_empty() {
-                                        typed_hint.clear();
-                                    } else {
-                                        break;
-                                    }
-                                }
-                                Key::Up => {
-                                    self.prev();
-                                }
-                                Key::Down => {
-                                    self.next();
-                                }
-                                Key::Left => {
-                                    self.prev();
-                                }
-                                Key::Right => {
-                                    self.next();
-                                }
-                                Key::Backspace => {
-                                    typed_hint.pop();
-                                }
-                                Key::Char(ch) => {
-                                    match ch {
-                                        '\n' => match self
-                                            .matches
-                                            .iter()
-                                            .enumerate()
-                                            .find(|&h| h.0 == self.skip)
-                                        {
-                                            Some(hm) => {
-                                                self.chosen.push((hm.1.text.to_string(), false));
-
-                                                if !self.multi {
-                                                    return CaptureEvent::Hint;
-                                                }
-                                            }
-                                            _ => panic!("Match not found?"),
-                                        },
-                                        ' ' => {
-                                            if self.multi {
-                                                // Finalize the multi selection
-                                                return CaptureEvent::Hint;
-                                            } else {
-                                                // Enable the multi selection
-                                                self.multi = true;
-                                            }
-                                        }
-                                        key => {
-                                            let key = key.to_string();
-                                            let lower_key = key.to_lowercase();
-
-                                            typed_hint.push_str(lower_key.as_str());
-
-                                            let selection = self
-                                                .matches
-                                                .iter()
-                                                .find(|mat| mat.hint == Some(typed_hint.clone()));
-
-                                            match selection {
-                                                Some(mat) => {
-                                                    self.chosen.push((
-                                                        mat.text.to_string(),
-                                                        key != lower_key,
-                                                    ));
-
-                                                    if self.multi {
-                                                        typed_hint.clear();
-                                                    } else {
-                                                        return CaptureEvent::Hint;
-                                                    }
-                                                }
-                                                None => {
-                                                    if !self.multi
-                                                        && typed_hint.len() >= longest_hint.len()
-                                                    {
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                _ => {
-                                    // Unknown key
-                                }
+                            match handle_key(
+                                key,
+                                &mut self.multi,
+                                &mut self.skip,
+                                &mut typed_hint,
+                                &mut self.chosen,
+                                &input_matches,
+                                longest_hint_len,
+                            ) {
+                                KeyOutcome::Continue => {}
+                                KeyOutcome::Exit => break,
+                                KeyOutcome::Hint => return CaptureEvent::Hint,
                             }
                         }
                         Err(err) => panic!("{}", err),
@@ -392,6 +332,106 @@ impl<'a> View<'a> {
         write!(stdout, "{}", cursor::Show).unwrap();
 
         hints
+    }
+}
+
+fn previous_index(index: usize) -> usize {
+    index.saturating_sub(1)
+}
+
+fn next_index(index: usize, len: usize) -> usize {
+    if index < len.saturating_sub(1) {
+        index + 1
+    } else {
+        index
+    }
+}
+
+fn handle_key(
+    key: Key,
+    multi: &mut bool,
+    skip: &mut usize,
+    typed_hint: &mut String,
+    chosen: &mut Vec<(String, bool)>,
+    matches: &[InputMatch<'_>],
+    longest_hint_len: usize,
+) -> KeyOutcome {
+    match key {
+        Key::Esc => {
+            if *multi && !typed_hint.is_empty() {
+                typed_hint.clear();
+                KeyOutcome::Continue
+            } else {
+                KeyOutcome::Exit
+            }
+        }
+        Key::Up | Key::Left => {
+            *skip = previous_index(*skip);
+            KeyOutcome::Continue
+        }
+        Key::Down | Key::Right => {
+            *skip = next_index(*skip, matches.len());
+            KeyOutcome::Continue
+        }
+        Key::Backspace => {
+            typed_hint.pop();
+            KeyOutcome::Continue
+        }
+        Key::Char('\n') => {
+            let mat = matches.get(*skip).expect("Match not found?");
+            chosen.push((mat.text.to_string(), false));
+
+            if *multi {
+                KeyOutcome::Continue
+            } else {
+                KeyOutcome::Hint
+            }
+        }
+        Key::Char(' ') => {
+            if *multi {
+                KeyOutcome::Hint
+            } else {
+                *multi = true;
+                KeyOutcome::Continue
+            }
+        }
+        Key::Char(ch) => {
+            handle_hint_char(ch, *multi, typed_hint, chosen, matches, longest_hint_len)
+        }
+        _ => KeyOutcome::Continue,
+    }
+}
+
+fn handle_hint_char(
+    ch: char,
+    multi: bool,
+    typed_hint: &mut String,
+    chosen: &mut Vec<(String, bool)>,
+    matches: &[InputMatch<'_>],
+    longest_hint_len: usize,
+) -> KeyOutcome {
+    let key = ch.to_string();
+    let lower_key = key.to_lowercase();
+
+    typed_hint.push_str(lower_key.as_str());
+
+    let selection = matches
+        .iter()
+        .find(|mat| mat.hint == Some(typed_hint.as_str()));
+
+    if let Some(mat) = selection {
+        chosen.push((mat.text.to_string(), key != lower_key));
+
+        if multi {
+            typed_hint.clear();
+            KeyOutcome::Continue
+        } else {
+            KeyOutcome::Hint
+        }
+    } else if !multi && typed_hint.len() >= longest_hint_len {
+        KeyOutcome::Exit
+    } else {
+        KeyOutcome::Continue
     }
 }
 
@@ -474,6 +514,196 @@ mod tests {
             contrast,
             position,
         }
+    }
+
+    fn input_matches() -> [InputMatch<'static>; 2] {
+        [
+            InputMatch {
+                text: "alpha",
+                hint: Some("a"),
+            },
+            InputMatch {
+                text: "bravo",
+                hint: Some("b"),
+            },
+        ]
+    }
+
+    #[test]
+    fn lowercase_hint_selects_match() {
+        let matches = input_matches();
+        let mut multi = false;
+        let mut skip = 0;
+        let mut typed_hint = String::new();
+        let mut chosen = vec![];
+
+        let outcome = handle_key(
+            Key::Char('a'),
+            &mut multi,
+            &mut skip,
+            &mut typed_hint,
+            &mut chosen,
+            &matches,
+            1,
+        );
+
+        assert_eq!(outcome, KeyOutcome::Hint);
+        assert_eq!(chosen, [("alpha".to_string(), false)]);
+    }
+
+    #[test]
+    fn uppercase_hint_flags_selection_for_upcase_command() {
+        let matches = input_matches();
+        let mut multi = false;
+        let mut skip = 0;
+        let mut typed_hint = String::new();
+        let mut chosen = vec![];
+
+        let outcome = handle_key(
+            Key::Char('A'),
+            &mut multi,
+            &mut skip,
+            &mut typed_hint,
+            &mut chosen,
+            &matches,
+            1,
+        );
+
+        assert_eq!(outcome, KeyOutcome::Hint);
+        assert_eq!(chosen, [("alpha".to_string(), true)]);
+    }
+
+    #[test]
+    fn multi_selection_collects_hints_and_space_finalizes() {
+        let matches = input_matches();
+        let mut multi = true;
+        let mut skip = 0;
+        let mut typed_hint = String::new();
+        let mut chosen = vec![];
+
+        let selection_outcome = handle_key(
+            Key::Char('a'),
+            &mut multi,
+            &mut skip,
+            &mut typed_hint,
+            &mut chosen,
+            &matches,
+            1,
+        );
+
+        assert_eq!(selection_outcome, KeyOutcome::Continue);
+        assert_eq!(typed_hint, "");
+        assert_eq!(chosen, [("alpha".to_string(), false)]);
+
+        let finalize_outcome = handle_key(
+            Key::Char(' '),
+            &mut multi,
+            &mut skip,
+            &mut typed_hint,
+            &mut chosen,
+            &matches,
+            1,
+        );
+
+        assert_eq!(finalize_outcome, KeyOutcome::Hint);
+    }
+
+    #[test]
+    fn escape_and_backspace_update_typed_hint() {
+        let matches = input_matches();
+        let mut multi = true;
+        let mut skip = 0;
+        let mut typed_hint = "ab".to_string();
+        let mut chosen = vec![];
+
+        let backspace_outcome = handle_key(
+            Key::Backspace,
+            &mut multi,
+            &mut skip,
+            &mut typed_hint,
+            &mut chosen,
+            &matches,
+            1,
+        );
+
+        assert_eq!(backspace_outcome, KeyOutcome::Continue);
+        assert_eq!(typed_hint, "a");
+
+        let escape_outcome = handle_key(
+            Key::Esc,
+            &mut multi,
+            &mut skip,
+            &mut typed_hint,
+            &mut chosen,
+            &matches,
+            1,
+        );
+
+        assert_eq!(escape_outcome, KeyOutcome::Continue);
+        assert_eq!(typed_hint, "");
+
+        let second_escape_outcome = handle_key(
+            Key::Esc,
+            &mut multi,
+            &mut skip,
+            &mut typed_hint,
+            &mut chosen,
+            &matches,
+            1,
+        );
+
+        assert_eq!(second_escape_outcome, KeyOutcome::Exit);
+    }
+
+    #[test]
+    fn invalid_hint_exits_single_select_and_can_be_cleared_in_multi_select() {
+        let matches = input_matches();
+        let mut multi = false;
+        let mut skip = 0;
+        let mut typed_hint = String::new();
+        let mut chosen = vec![];
+
+        let single_outcome = handle_key(
+            Key::Char('z'),
+            &mut multi,
+            &mut skip,
+            &mut typed_hint,
+            &mut chosen,
+            &matches,
+            1,
+        );
+
+        assert_eq!(single_outcome, KeyOutcome::Exit);
+        assert_eq!(chosen, []);
+
+        multi = true;
+        typed_hint.clear();
+
+        let multi_outcome = handle_key(
+            Key::Char('z'),
+            &mut multi,
+            &mut skip,
+            &mut typed_hint,
+            &mut chosen,
+            &matches,
+            1,
+        );
+
+        assert_eq!(multi_outcome, KeyOutcome::Continue);
+        assert_eq!(typed_hint, "z");
+
+        let escape_outcome = handle_key(
+            Key::Esc,
+            &mut multi,
+            &mut skip,
+            &mut typed_hint,
+            &mut chosen,
+            &matches,
+            1,
+        );
+
+        assert_eq!(escape_outcome, KeyOutcome::Continue);
+        assert_eq!(typed_hint, "");
     }
 
     #[test]
