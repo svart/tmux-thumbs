@@ -407,16 +407,8 @@ This is the known list of versions of `tmux` compatible with `tmux-thumbs`:
 
 | Version | Compatible |
 |:-------:|:----------:|
-|   3.0a  |     ✅     |
-|   2.9a  |     ✅     |
-|   2.8   |      ❓    |
-|   2.7   |      ❓    |
-|   2.6   |     ✅     |
-|   2.5   |      ❓    |
-|   2.4   |      ❓    |
-|   2.3   |      ❓    |
-|   1.8   |      ❓    |
-|   1.7   |      ❓    |
+|   3.6b  |     ✅     |
+|  Other  |      ?     |
 
 If you can check hat `tmux-thumbs` is or is not compatible with some specific version of `tmux`, let me know.
 
