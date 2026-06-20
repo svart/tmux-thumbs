@@ -345,6 +345,20 @@ fn parse_tmux_flag(value: &str, name: &str, line_number: usize) -> Result<bool, 
     }
 }
 
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn tmux_option_value(raw: &str) -> &str {
+    let value = raw.trim();
+
+    if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
+        &value[1..value.len() - 1]
+    } else {
+        value
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ThumbsPane {
     id: String,
@@ -490,14 +504,14 @@ impl<'a> Swapper<'a> {
             .stdout;
         let lines: Vec<&str> = options.split('\n').collect();
 
-        let pattern = Regex::new(r#"^@thumbs-([\w\-0-9]+)\s+"?([^"]+)"?$"#).unwrap();
+        let pattern = Regex::new(r#"^@thumbs-([\w\-0-9]+)\s+(.+)$"#).unwrap();
 
         let args = lines
             .iter()
             .flat_map(|line| {
                 if let Some(captures) = pattern.captures(line) {
                     let name = captures.get(1).unwrap().as_str();
-                    let value = captures.get(2).unwrap().as_str();
+                    let value = tmux_option_value(captures.get(2).unwrap().as_str());
 
                     let boolean_params = ["reverse", "unique", "contrast"];
 
@@ -519,13 +533,13 @@ impl<'a> Swapper<'a> {
                     ];
 
                     if string_params.contains(&name) {
-                        return vec![format!("--{}", name), format!("'{}'", value)];
+                        return vec![format!("--{}", name), shell_quote(value)];
                     }
 
                     if name.starts_with("regexp") {
                         return vec![
                             "--regexp".to_string(),
-                            format!("'{}'", value.replace("\\\\", "\\")),
+                            shell_quote(&value.replace("\\\\", "\\")),
                         ];
                     }
 
@@ -536,7 +550,7 @@ impl<'a> Swapper<'a> {
             })
             .collect::<Vec<String>>();
 
-        let active_pane_id = active_pane.id.clone();
+        let active_pane_id = shell_quote(active_pane.id.as_str());
 
         let scroll_params = if let Some(scroll_position) = active_pane.scroll_position {
             format!(
@@ -544,12 +558,6 @@ impl<'a> Swapper<'a> {
                 -scroll_position,
                 active_pane.height - scroll_position - 1
             )
-        } else {
-            "".to_string()
-        };
-
-        let zoom_command = if active_pane.zoomed {
-            format!("tmux resize-pane -t {} -Z;", active_pane_id)
         } else {
             "".to_string()
         };
@@ -563,18 +571,35 @@ impl<'a> Swapper<'a> {
             height = active_pane.height
         );
 
-        let pane_command = format!(
-        "capture=\"$({capture_command})\"; tmux wait-for -S {capture_signal}; tmux wait-for {start_signal}; printf '%s\\n' \"$capture\" | {dir}/target/release/thumbs -f '%U:%H' -t {tmp} {args}; tmux swap-pane -t {active_pane_id}; {zoom_command} tmux wait-for -S {signal}",
-            capture_command = capture_command,
-            active_pane_id = active_pane_id,
-            dir = self.dir,
-            tmp = self.result_path.as_str(),
-            args = args.join(" "),
-            zoom_command = zoom_command,
-            signal = self.signals.finished.as_str(),
-        capture_signal = self.signals.captured.as_str(),
-        start_signal = self.signals.start.as_str()
-    );
+        let picker_path = shell_quote(&format!("{}/target/release/thumbs", self.dir));
+        let picker_command = format!(
+            "printf '%s\\n' \"$capture\" | {} -f {} -t {} {}",
+            picker_path,
+            shell_quote("%U:%H"),
+            shell_quote(self.result_path.as_str()),
+            args.join(" ")
+        );
+        let mut pane_script = vec![
+            format!("capture=\"$({})\"", capture_command),
+            format!(
+                "tmux wait-for -S {}",
+                shell_quote(self.signals.captured.as_str())
+            ),
+            format!("tmux wait-for {}", shell_quote(self.signals.start.as_str())),
+            picker_command,
+            format!("tmux swap-pane -t {}", active_pane_id),
+        ];
+
+        if active_pane.zoomed {
+            pane_script.push(format!("tmux resize-pane -t {} -Z", active_pane_id));
+        }
+
+        pane_script.push(format!(
+            "tmux wait-for -S {}",
+            shell_quote(self.signals.finished.as_str())
+        ));
+
+        let pane_command = pane_script.join("; ");
 
         let thumbs_command = [
             "tmux",
@@ -1060,6 +1085,15 @@ mod tests {
     }
 
     #[test]
+    fn shell_quote_escapes_shell_values() {
+        assert_eq!(shell_quote(""), "''");
+        assert_eq!(shell_quote("bright green"), "'bright green'");
+        assert_eq!(shell_quote("quote'color"), "'quote'\\''color'");
+        assert_eq!(shell_quote("bright\"blue"), "'bright\"blue'");
+        assert_eq!(shell_quote("slash\\color"), "'slash\\color'");
+    }
+
+    #[test]
     fn malformed_active_pane_output_returns_phase_error() {
         let last_command_outputs = vec!["%97\t0\t24\n".to_string()];
         let mut executor = TestShell::new(last_command_outputs);
@@ -1226,17 +1260,23 @@ mod tests {
         let pane_command = new_window_command.last().unwrap();
 
         let capture_index = pane_command
-            .find("capture=\"$(tmux capture-pane -J -t %98 -p | tail -n 8)\"")
+            .find("capture=\"$(tmux capture-pane -J -t '%98' -p | tail -n 8)\"")
             .unwrap();
         let capture_signal_index = pane_command
-            .find("tmux wait-for -S thumbs-captured-")
+            .find("tmux wait-for -S 'thumbs-captured-")
             .unwrap();
-        let start_wait_index = pane_command.find("tmux wait-for thumbs-start-").unwrap();
+        let start_wait_index = pane_command.find("tmux wait-for 'thumbs-start-").unwrap();
         let thumbs_index = pane_command.find("/target/release/thumbs").unwrap();
+        let restore_index = pane_command.find("tmux swap-pane -t '%98'").unwrap();
+        let finished_signal_index = pane_command
+            .find("tmux wait-for -S 'thumbs-finished-")
+            .unwrap();
 
         assert!(capture_index < capture_signal_index);
         assert!(capture_signal_index < start_wait_index);
         assert!(start_wait_index < thumbs_index);
+        assert!(thumbs_index < restore_index);
+        assert!(restore_index < finished_signal_index);
     }
 
     #[test]
@@ -1390,7 +1430,7 @@ mod tests {
         let pane_command = new_window_command.last().unwrap();
 
         assert_ne!(result_path, "/tmp/thumbs-last");
-        assert!(pane_command.contains(&format!(" -t {} ", result_path)));
+        assert!(pane_command.contains(&format!(" -t '{}' ", result_path)));
         assert!(executor
             .executions
             .iter()
@@ -1488,6 +1528,38 @@ mod tests {
         let pane_command = new_window_command.last().unwrap();
 
         assert!(pane_command.contains("--fg-color 'bright green'"));
+    }
+
+    #[test]
+    fn quotes_tmux_options_with_shell_metacharacters() {
+        let last_command_outputs = vec![
+            "".to_string(),
+            "%100".to_string(),
+            "@thumbs-fg-color \"quote'color\"\n@thumbs-bg-color bright\"blue\n@thumbs-hint-fg-color \"slash\\color\"\n@thumbs-regexp-1 \"foo'bar\"\n".to_string(),
+            "%98\t0\t8\t0\t0\tactive\n".to_string(),
+        ];
+        let mut executor = TestShell::new(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "/plugin".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            false,
+        );
+
+        let active_pane = swapper.capture_active_pane().unwrap();
+        swapper.execute_thumbs(&active_pane).unwrap();
+
+        let new_window_command = executor
+            .new_window_command()
+            .expect("thumbs window should be created");
+        let pane_command = new_window_command.last().unwrap();
+
+        assert!(pane_command.contains("--fg-color 'quote'\\''color'"));
+        assert!(pane_command.contains("--bg-color 'bright\"blue'"));
+        assert!(pane_command.contains("--hint-fg-color 'slash\\color'"));
+        assert!(pane_command.contains("--regexp 'foo'\\''bar'"));
     }
 
     #[test]

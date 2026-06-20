@@ -302,23 +302,23 @@ Swapper::run() -> Result<RunOutcome>
 
 **Steps:**
 
-- [ ] Introduce a small shell quoting helper for values inserted into shell script text.
-- [ ] Use the helper for `dir`, picker binary path, result path, option values, regexp values, pane ids, and signal names.
-- [ ] Build the pane script from named pieces, not one large `format!` call.
-- [ ] Keep the current capture-before-start ordering.
-- [ ] Add tests for option values containing spaces, single quotes, double quotes, and backslashes.
-- [ ] Add tests that generated script still contains capture, capture signal, start wait, picker invocation, pane restore, and finished signal in the required order.
+- [x] Introduce a small shell quoting helper for values inserted into shell script text.
+- [x] Use the helper for `dir`, picker binary path, result path, option values, regexp values, pane ids, and signal names.
+- [x] Build the pane script from named pieces, not one large `format!` call.
+- [x] Keep the current capture-before-start ordering.
+- [x] Add tests for option values containing spaces, single quotes, double quotes, and backslashes.
+- [x] Add tests that generated script still contains capture, capture signal, start wait, picker invocation, pane restore, and finished signal in the required order.
 
 **Acceptance criteria:**
 
-- [ ] No untrusted tmux option value is inserted into the shell script unquoted.
-- [ ] Existing custom regexp behavior is preserved.
-- [ ] Tests document shell escaping for troublesome values.
+- [x] No untrusted tmux option value is inserted into the shell script unquoted.
+- [x] Existing custom regexp behavior is preserved.
+- [x] Tests document shell escaping for troublesome values.
 
 **Verification:**
 
-- [ ] Run `cargo test --bin tmux-thumbs --verbose`.
-- [ ] Run `cargo test --verbose`.
+- [x] Run `cargo test --bin tmux-thumbs --verbose`.
+- [x] Run `cargo test --verbose`.
 
 **Dependencies:** Task 1.6.
 
