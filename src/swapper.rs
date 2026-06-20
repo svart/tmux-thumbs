@@ -5,7 +5,10 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use regex::Regex;
 use std::io::Write;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static RUN_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 trait Executor {
     fn execute(&mut self, args: Vec<String>) -> String;
@@ -31,8 +34,6 @@ impl Executor for RealShell {
         output.trim_end().to_string()
     }
 }
-
-const TMP_FILE: &str = "/tmp/thumbs-last";
 
 #[allow(dead_code)]
 fn dbg(msg: &str) {
@@ -61,6 +62,7 @@ pub struct Swapper<'a> {
     signal: String,
     capture_signal: String,
     start_signal: String,
+    result_path: String,
 }
 
 impl<'a> Swapper<'a> {
@@ -75,14 +77,20 @@ impl<'a> Swapper<'a> {
         let since_the_epoch = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards");
+        let sequence = RUN_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let signal_id = format!(
-            "{}-{}",
+            "{}-{}-{}",
             since_the_epoch.as_secs(),
-            since_the_epoch.subsec_nanos()
+            since_the_epoch.subsec_nanos(),
+            sequence
         );
         let signal = format!("thumbs-finished-{}", signal_id);
         let capture_signal = format!("thumbs-captured-{}", signal_id);
         let start_signal = format!("thumbs-start-{}", signal_id);
+        let result_path = std::env::temp_dir()
+            .join(format!("thumbs-last-{}", signal_id))
+            .to_string_lossy()
+            .into_owned();
 
         Swapper {
             executor,
@@ -100,6 +108,7 @@ impl<'a> Swapper<'a> {
             signal,
             capture_signal,
             start_signal,
+            result_path,
         }
     }
 
@@ -240,13 +249,13 @@ impl<'a> Swapper<'a> {
 
         let pane_command = format!(
         "capture=\"$({capture_command})\"; tmux wait-for -S {capture_signal}; tmux wait-for {start_signal}; printf '%s\\n' \"$capture\" | {dir}/target/release/thumbs -f '%U:%H' -t {tmp} {args}; tmux swap-pane -t {active_pane_id}; {zoom_command} tmux wait-for -S {signal}",
-        capture_command = capture_command,
-        active_pane_id = active_pane_id,
-        dir = self.dir,
-        tmp = TMP_FILE,
-        args = args.join(" "),
-        zoom_command = zoom_command,
-        signal = self.signal,
+            capture_command = capture_command,
+            active_pane_id = active_pane_id,
+            dir = self.dir,
+            tmp = self.result_path.as_str(),
+            args = args.join(" "),
+            zoom_command = zoom_command,
+            signal = self.signal,
         capture_signal = self.capture_signal,
         start_signal = self.start_signal
     );
@@ -334,14 +343,14 @@ impl<'a> Swapper<'a> {
     }
 
     pub fn retrieve_content(&mut self) {
-        let retrieve_command = ["cat", TMP_FILE];
+        let retrieve_command = ["cat", self.result_path.as_str()];
         let params = retrieve_command.iter().map(|arg| arg.to_string()).collect();
 
         self.content = Some(self.executor.execute(params));
     }
 
     pub fn destroy_content(&mut self) {
-        let retrieve_command = ["rm", TMP_FILE];
+        let retrieve_command = ["rm", self.result_path.as_str()];
         let params = retrieve_command.iter().map(|arg| arg.to_string()).collect();
 
         self.executor.execute(params);
@@ -777,6 +786,7 @@ mod tests {
         let last_command_outputs = vec![
             "".to_string(),
             "".to_string(),
+            "".to_string(),
             "%100".to_string(),
             "".to_string(),
             "%98:0:8:0:0:active\n".to_string(),
@@ -793,18 +803,79 @@ mod tests {
 
         swapper.capture_active_pane();
         swapper.execute_thumbs();
+        let result_path = swapper.result_path.clone();
         swapper.retrieve_content();
+        swapper.destroy_content();
 
         let new_window_command = executor
             .new_window_command()
             .expect("thumbs window should be created");
         let pane_command = new_window_command.last().unwrap();
 
-        assert!(pane_command.contains(" -t /tmp/thumbs-last "));
-        assert_eq!(
-            executor.last_executed().unwrap(),
-            ["cat", "/tmp/thumbs-last"]
+        assert_ne!(result_path, "/tmp/thumbs-last");
+        assert!(pane_command.contains(&format!(" -t {} ", result_path)));
+        assert!(executor
+            .executions
+            .iter()
+            .any(|command| command.as_slice() == ["cat", result_path.as_str()]));
+        assert!(executor
+            .executions
+            .iter()
+            .any(|command| command.as_slice() == ["rm", result_path.as_str()]));
+    }
+
+    #[test]
+    fn result_paths_are_unique_per_swapper() {
+        let first_path = {
+            let mut executor = TestShell::new(vec![]);
+            Swapper::new(
+                &mut executor,
+                "/plugin".to_string(),
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+                false,
+            )
+            .result_path
+            .clone()
+        };
+        let second_path = {
+            let mut executor = TestShell::new(vec![]);
+            Swapper::new(
+                &mut executor,
+                "/plugin".to_string(),
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+                false,
+            )
+            .result_path
+            .clone()
+        };
+
+        assert_ne!(first_path, second_path);
+        assert!(first_path.contains("thumbs-last-"));
+        assert!(second_path.contains("thumbs-last-"));
+    }
+
+    #[test]
+    fn missing_result_file_content_does_not_execute_command() {
+        let last_command_outputs = vec!["".to_string()];
+        let mut executor = TestShell::new(last_command_outputs);
+        let mut swapper = Swapper::new(
+            &mut executor,
+            "".to_string(),
+            "echo {}".to_string(),
+            "open {}".to_string(),
+            "multi {}".to_string(),
+            false,
         );
+
+        swapper.retrieve_content();
+        swapper.execute_command();
+
+        assert_eq!(executor.executions.len(), 1);
+        assert_eq!(executor.executions[0][0], "cat");
     }
 
     #[test]

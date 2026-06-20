@@ -3,7 +3,7 @@
 - This is one Rust 2018 Cargo crate named `thumbs`.
 - The crate builds two binaries: `thumbs` from `src/main.rs` and `tmux-thumbs` from `src/swapper.rs`.
 - `thumbs` is the interactive hint picker. It reads pane text from stdin, finds matches, renders hints, and writes the chosen value to stdout or `--target`.
-- `tmux-thumbs` is the tmux orchestrator. It shells out to `tmux`, captures pane content, starts `target/release/thumbs`, swaps panes, reads `/tmp/thumbs-last`, and runs the configured pick command.
+- `tmux-thumbs` is the tmux orchestrator. It shells out to `tmux`, captures pane content, starts `target/release/thumbs`, swaps panes, reads a per-run result file under the system temp directory, and runs the configured pick command.
 - Runtime plugin entry is `tmux-thumbs.tmux` -> `tmux-thumbs.sh` -> `target/release/tmux-thumbs` -> `target/release/thumbs`.
 - Prefer small, behavior-preserving changes. Existing tmux behavior, CLI flags, and command templating are user-facing API.
 
@@ -26,7 +26,7 @@
 | `src/main.rs` | `thumbs` CLI args, stdin reading, state/view wiring, output formatting, `--target` writes |
 | `src/state.rs` | built-in regex patterns, exclude patterns, custom `--regexp`, match priority, capture extraction, hint assignment |
 | `src/view.rs` | termion raw mode, alternate screen rendering, keyboard input, navigation, multi-selection, hint display positions |
-| `src/swapper.rs` | `tmux-thumbs` CLI args, tmux pane orchestration, option forwarding, `/tmp/thumbs-last`, command execution, OSC52 |
+| `src/swapper.rs` | `tmux-thumbs` CLI args, tmux pane orchestration, option forwarding, per-run result handoff, command execution, OSC52 |
 | `src/alphabets.rs` | named alphabets and hint expansion |
 | `src/colors.rs` | named colors and `#RRGGBB` parsing |
 | `tmux-thumbs.tmux` | `thumbs-pick` command alias and `@thumbs-key` binding |
@@ -52,7 +52,7 @@
 3. If `thumbs` is missing or stale, `tmux-thumbs.sh` opens the interactive `tmux-thumbs-install.sh`; avoid this path in automated verification.
 4. `tmux-thumbs.sh` passes only `--dir`, `--command`, `--upcase-command`, `--multi-command`, and `--osc52` into `tmux-thumbs`.
 5. `src/swapper.rs` reads `tmux show -g`, translates UI options such as `@thumbs-alphabet`, colors, `@thumbs-reverse`, `@thumbs-unique`, `@thumbs-contrast`, and `@thumbs-regexp-*`, then forwards them to `thumbs`.
-6. `src/swapper.rs` captures the active pane before pane swapping, starts `thumbs` in a hidden window, synchronizes with `tmux wait-for`, swaps panes, waits for selection, reads `/tmp/thumbs-last`, deletes it, and runs the configured command.
+6. `src/swapper.rs` captures the active pane before pane swapping, starts `thumbs` in a hidden window, synchronizes with `tmux wait-for`, swaps panes, waits for selection, reads and deletes that run's temp result file, and runs the configured command.
 7. `src/main.rs` reads stdin, builds `State`, presents `View`, formats selections with `%U` and `%H`, and prints or writes the result.
 
 ## Behavior Invariants
