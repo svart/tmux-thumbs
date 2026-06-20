@@ -423,7 +423,7 @@ Swapper::run() -> Result<RunOutcome>
 - [x] `cargo test --bin tmux-thumbs --verbose` passes.
 - [x] `cargo test --verbose` passes.
 - [x] `cargo build --release` passes.
-- [ ] Manual tmux smoke test passes normal pick, uppercase pick, multi-select, custom regexp, and cancellation.
+- [x] Manual tmux smoke test passes normal pick, uppercase pick, multi-select, custom regexp, and cancellation.
 - [x] Review generated pane script for quoting, wait signaling, and cleanup.
 - [x] Verify one simulated failure reports the failing phase, command context, and run identifiers.
 - [x] Verify normal cancellation stays quiet unless debug mode is enabled.
@@ -764,7 +764,7 @@ Swapper::run() -> Result<RunOutcome>
 - [x] `cargo build --release` passes if runtime wrapper changed.
 - [x] Focused state tests pass if matching changed.
 - [x] Focused tmux tests pass if orchestration changed.
-- [ ] Manual tmux smoke test passes if UI, wrapper, command execution, pane orchestration, or OSC52 changed.
+- [x] Manual tmux smoke test passes if UI, wrapper, command execution, pane orchestration, or OSC52 changed.
 - [x] Public flags and tmux option names are unchanged.
 - [x] Invalid input produces controlled errors rather than panics where the task touched parsing.
 
@@ -822,8 +822,8 @@ Run this after any change touching `src/tmux.rs`, `src/view.rs`, shell wrappers,
 
 # Final Definition Of Done
 
-- [ ] Part 1 checkpoint is complete.
-- [ ] Part 2 checkpoint is complete.
+- [x] Part 1 checkpoint is complete.
+- [x] Part 2 checkpoint is complete.
 - [ ] No fixed `/tmp/thumbs-last` handoff remains.
 - [ ] Orchestration errors are observable and cancellation is explicit.
 - [ ] `Swapper` no longer depends on public methods being called in a fragile order.
@@ -831,5 +831,5 @@ Run this after any change touching `src/tmux.rs`, `src/view.rs`, shell wrappers,
 - [ ] User-facing inputs are parsed into typed config before use.
 - [ ] Rendering logic is testable without a real terminal where practical.
 - [ ] `cargo fmt --all -- --check`, `cargo build --verbose`, and `cargo test --verbose` pass.
-- [ ] Runtime flow has been manually smoke-tested in tmux after a release build.
+- [x] Runtime flow has been manually smoke-tested in tmux after a release build.
 - [ ] README and `AGENTS.md` match the final implementation.
